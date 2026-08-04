@@ -115,7 +115,7 @@ confirm() {
 }
 
 confirm_restart() {
-    confirm "Restart the panel, Attention: Restarting the panel will also restart xray" "y"
+    confirm "重启面板 the panel, Attention: 重启面板ing the panel will also restart xray" "y"
     if [[ $? == 0 ]]; then
         restart
     else
@@ -150,7 +150,7 @@ update() {
     fi
     bash <(curl -Ls https://raw.githubusercontent.com/MHSanaei/3x-ui/main/update.sh)
     if [[ $? == 0 ]]; then
-        LOGI "Update is complete, Panel has automatically restarted "
+        LOGI "更新 is complete, Panel has automatically restarted "
         before_show_menu
     fi
 }
@@ -221,7 +221,7 @@ update_menu() {
 
     if replace_xui_script "https://raw.githubusercontent.com/MHSanaei/3x-ui/main/x-ui.sh" "false"; then
         chmod +x ${xui_folder}/x-ui.sh
-        echo -e "${green}Update successful. The panel has automatically restarted.${plain}"
+        echo -e "${green}更新 successful. The panel has automatically restarted.${plain}"
         exit 0
     else
         echo -e "${red}Failed to update the menu.${plain}"
@@ -283,7 +283,7 @@ uninstall() {
     rm -f "$0"
 
     echo ""
-    echo -e "Uninstalled Successfully.\n"
+    echo -e "卸载ed Successfully.\n"
     echo "If you need to install this panel again, use below command:"
     echo -e "${green}bash <(curl -Ls https://raw.githubusercontent.com/qzyfl/CatVPN/v3-rebase/install.sh)${plain}"
     echo ""
@@ -488,12 +488,12 @@ check_config() {
                 start 0 > /dev/null 2>&1
             else
                 LOGE "IP certificate setup failed."
-                echo -e "${yellow}You can try again via main menu option 20 (SSL Certificate Management).${plain}"
+                echo -e "${yellow}You can try again via main menu option 20 (SSL 证书管理).${plain}"
                 start 0 > /dev/null 2>&1
             fi
         else
             echo -e "${yellow}Access URL: http://${server_ip}:${existing_port}${existing_webBasePath}${plain}"
-            echo -e "${yellow}For security, please configure SSL certificate using main menu option 20 (SSL Certificate Management)${plain}"
+            echo -e "${yellow}For security, please configure SSL certificate using main menu option 20 (SSL 证书管理)${plain}"
         fi
     fi
 }
@@ -519,7 +519,7 @@ start() {
     else
         if [[ "${running_in_docker}" == "true" ]]; then
             LOGE "Panel process is not running inside this container."
-            LOGI "In Docker the panel is the container's main process. Restart the container to bring it back up:"
+            LOGI "In Docker the panel is the container's main process. 重启面板 the container to bring it back up:"
             LOGI "  docker restart <container_name>"
             if [[ $# == 0 ]]; then
                 before_show_menu
@@ -534,7 +534,7 @@ start() {
         sleep 2
         check_status
         if [[ $? == 0 ]]; then
-            LOGI "x-ui Started Successfully"
+            LOGI "x-ui 启动ed Successfully"
         else
             LOGE "panel Failed to start, Probably because it takes longer than two seconds to start, Please check the log information later"
         fi
@@ -584,14 +584,14 @@ restart() {
         if signal_xui HUP; then
             sleep 1
             signal_xui USR1
-            LOGI "Restart signal sent to the panel and xray-core."
+            LOGI "重启面板 signal sent to the panel and xray-core."
         else
             LOGE "Could not find the running panel process to signal."
         fi
         sleep 2
         check_status
         if [[ $? == 0 ]]; then
-            LOGI "x-ui and xray Restarted successfully"
+            LOGI "x-ui and xray 重启面板ed successfully"
         else
             LOGE "Panel restart failed, Please check the log information later"
         fi
@@ -608,7 +608,7 @@ restart() {
     sleep 2
     check_status
     if [[ $? == 0 ]]; then
-        LOGI "x-ui and xray Restarted successfully"
+        LOGI "x-ui and xray 重启面板ed successfully"
     else
         LOGE "Panel restart failed, Probably because it takes longer than two seconds to start, Please check the log information later"
     fi
@@ -620,7 +620,7 @@ restart() {
 restart_xray() {
     if [[ "${running_in_docker}" == "true" ]]; then
         if signal_xui USR1; then
-            LOGI "xray-core Restart signal sent successfully, Please check the log information to confirm whether xray restarted successfully"
+            LOGI "xray-core 重启面板 signal sent successfully, Please check the log information to confirm whether xray restarted successfully"
         else
             LOGE "Could not find the running panel process to signal."
         fi
@@ -636,7 +636,7 @@ restart_xray() {
     else
         systemctl reload x-ui
     fi
-    LOGI "xray-core Restart signal sent successfully, Please check the log information to confirm whether xray restarted successfully"
+    LOGI "xray-core 重启面板 signal sent successfully, Please check the log information to confirm whether xray restarted successfully"
     sleep 2
     show_xray_status
     if [[ $# == 0 ]]; then
@@ -764,7 +764,7 @@ show_log() {
 }
 
 bbr_menu() {
-    echo -e "${green}\t1.${plain} Enable BBR"
+    echo -e "${green}\t1.${plain} 启用 BBR"
     echo -e "${green}\t2.${plain} Disable BBR"
     echo -e "${green}\t0.${plain} Back to Main Menu"
     read -rp "Choose an option: " choice
@@ -824,7 +824,7 @@ enable_bbr() {
         before_show_menu
     fi
 
-    # Enable BBR
+    # 启用 BBR
     if [ -d "/etc/sysctl.d/" ]; then
         {
             echo "#$(sysctl -n net.core.default_qdisc):$(sysctl -n net.ipv4.tcp_congestion_control)"
@@ -971,7 +971,7 @@ show_status() {
             show_enable_status
             ;;
         2)
-            echo -e "Panel state: ${red}Not Installed${plain}"
+            echo -e "Panel state: ${red}Not 安装ed${plain}"
             ;;
     esac
     show_xray_status
@@ -980,14 +980,14 @@ show_status() {
 
 show_enable_status() {
     if [[ "${running_in_docker}" == "true" ]]; then
-        echo -e "Start automatically: ${green}Managed by Docker${plain}"
+        echo -e "启动 automatically: ${green}Managed by Docker${plain}"
         return
     fi
     check_enabled
     if [[ $? == 0 ]]; then
-        echo -e "Start automatically: ${green}Yes${plain}"
+        echo -e "启动 automatically: ${green}Yes${plain}"
     else
-        echo -e "Start automatically: ${red}No${plain}"
+        echo -e "启动 automatically: ${red}No${plain}"
     fi
 }
 
@@ -1037,7 +1037,7 @@ show_mtproto_status() {
 }
 
 firewall_menu() {
-    echo -e "${green}\t1.${plain} ${green}Install${plain} Firewall"
+    echo -e "${green}\t1.${plain} ${green}安装${plain} Firewall"
     echo -e "${green}\t2.${plain} Port List [numbered]"
     echo -e "${green}\t3.${plain} ${green}Open${plain} Ports"
     echo -e "${green}\t4.${plain} ${red}Delete${plain} Ports from List"
@@ -1087,7 +1087,7 @@ firewall_menu() {
 
 install_firewall() {
     if ! command -v ufw &> /dev/null; then
-        echo "ufw firewall is not installed. Installing now..."
+        echo "ufw firewall is not installed. 安装ing now..."
         apt-get update
         apt-get install -y ufw
     else
@@ -1346,15 +1346,15 @@ install_acme() {
         return 0
     fi
 
-    LOGI "Installing acme.sh..."
+    LOGI "安装ing acme.sh..."
     cd ~ || return 1 # Ensure you can change to the home directory
 
     curl -s https://get.acme.sh | sh
     if [ $? -ne 0 ]; then
-        LOGE "Installation of acme.sh failed."
+        LOGE "安装ation of acme.sh failed."
         return 1
     else
-        LOGI "Installation of acme.sh succeeded."
+        LOGI "安装ation of acme.sh succeeded."
     fi
 
     return 0
@@ -1543,7 +1543,7 @@ ssl_cert_issue_main() {
 }
 
 ssl_cert_issue_for_ip() {
-    LOGI "Starting automatic SSL certificate generation for server IP..."
+    LOGI "启动ing automatic SSL certificate generation for server IP..."
     LOGI "Using Let's Encrypt shortlived profile (~6 days validity, auto-renews)"
 
     local existing_webBasePath=$(${xui_folder}/x-ui setting -show true | grep -Eo 'webBasePath: .+' | awk '{print $2}')
@@ -1706,7 +1706,7 @@ ssl_cert_issue_for_ip() {
         LOGI "Certificate issued successfully for IP: ${server_ip}"
     fi
 
-    # Install the certificate
+    # 安装 the certificate
     # Note: acme.sh may report "Reload error" and exit non-zero if reloadcmd fails,
     # but the cert files are still installed. We check for files instead of exit code.
     ~/.acme.sh/acme.sh --installcert --force -d ${server_ip} \
@@ -1923,14 +1923,14 @@ ssl_cert_issue() {
     echo "${installOutput}"
 
     local installWroteFiles=0
-    if echo "${installOutput}" | grep -q "Installing key to:" && echo "${installOutput}" | grep -q "Installing full chain to:"; then
+    if echo "${installOutput}" | grep -q "安装ing key to:" && echo "${installOutput}" | grep -q "安装ing full chain to:"; then
         installWroteFiles=1
     fi
 
     if [[ -f "/root/cert/${domain}/privkey.pem" && -f "/root/cert/${domain}/fullchain.pem" && (${installRc} -eq 0 || ${installWroteFiles} -eq 1) ]]; then
-        LOGI "Installing certificate succeeded, enabling auto renew..."
+        LOGI "安装ing certificate succeeded, enabling auto renew..."
     else
-        LOGE "Installing certificate failed, exiting."
+        LOGE "安装ing certificate failed, exiting."
         if [[ ${cert_exists} -eq 0 ]]; then
             rm -rf ~/.acme.sh/${domain} ~/.acme.sh/${domain}_ecc
         fi
@@ -1991,7 +1991,7 @@ ssl_cert_issue_CF() {
             echo "acme.sh could not be found. We will install it."
             install_acme
             if [ $? -ne 0 ]; then
-                LOGE "Install acme failed, please check logs."
+                LOGE "安装 acme failed, please check logs."
                 exit 1
             fi
         fi
@@ -2038,10 +2038,10 @@ ssl_cert_issue_CF() {
             LOGE "Certificate issuance failed, script exiting..."
             exit 1
         else
-            LOGI "Certificate issued successfully, Installing..."
+            LOGI "Certificate issued successfully, 安装ing..."
         fi
 
-        # Install the certificate
+        # 安装 the certificate
         certPath="/root/cert/${CF_Domain}"
         if [ -d "$certPath" ]; then
             rm -rf ${certPath}
@@ -2131,7 +2131,7 @@ run_speedtest() {
         # If not installed, determine installation method
         if command -v snap &> /dev/null; then
             # Use snap to install Speedtest
-            echo "Installing Speedtest using snap..."
+            echo "安装ing Speedtest using snap..."
             snap install speedtest
         else
             # Fallback to using package managers
@@ -2156,7 +2156,7 @@ run_speedtest() {
                 echo "Error: Package manager not found. You may need to install Speedtest manually."
                 return 1
             else
-                echo "Installing Speedtest using $pkg_manager..."
+                echo "安装ing Speedtest using $pkg_manager..."
                 curl -s $speedtest_install_script | bash
                 $pkg_manager install -y speedtest
             fi
@@ -2172,7 +2172,7 @@ ip_validation() {
 }
 
 iplimit_main() {
-    echo -e "\n${green}\t1.${plain} Install Fail2ban and configure IP Limit"
+    echo -e "\n${green}\t1.${plain} 安装 Fail2ban and configure IP Limit"
     echo -e "${green}\t2.${plain} Change Ban Duration"
     echo -e "${green}\t3.${plain} Unban Everyone"
     echo -e "${green}\t4.${plain} Ban Logs"
@@ -2180,8 +2180,8 @@ iplimit_main() {
     echo -e "${green}\t6.${plain} Unban an IP Address"
     echo -e "${green}\t7.${plain} Real-Time Logs"
     echo -e "${green}\t8.${plain} Service Status"
-    echo -e "${green}\t9.${plain} Service Restart"
-    echo -e "${green}\t10.${plain} Uninstall Fail2ban and IP Limit"
+    echo -e "${green}\t9.${plain} Service 重启面板"
+    echo -e "${green}\t10.${plain} 卸载 Fail2ban and IP Limit"
     echo -e "${green}\t0.${plain} Back to Main Menu"
     read -rp "Choose an option: " choice
     case "$choice" in
@@ -2285,9 +2285,9 @@ setup_fail2ban_iplimit() {
     fi
 
     if ! command -v fail2ban-client &> /dev/null; then
-        echo -e "${green}Fail2ban is not installed. Installing now...!${plain}\n"
+        echo -e "${green}Fail2ban is not installed. 安装ing now...!${plain}\n"
 
-        # Install fail2ban together with nftables. Recent fail2ban packages
+        # 安装 fail2ban together with nftables. Recent fail2ban packages
         # default to `banaction = nftables-multiport` in /etc/fail2ban/jail.conf,
         # but the `nftables` package isn't pulled in as a dependency on most
         # minimal server images (Debian 12+, Ubuntu 24+, fresh RHEL-family).
@@ -2402,7 +2402,7 @@ install_iplimit() {
 
 remove_iplimit() {
     echo -e "${green}\t1.${plain} Only remove IP Limit configurations"
-    echo -e "${green}\t2.${plain} Uninstall Fail2ban and IP Limit"
+    echo -e "${green}\t2.${plain} 卸载 Fail2ban and IP Limit"
     echo -e "${green}\t0.${plain} Back to Main Menu"
     read -rp "Choose an option: " num
     case "$num" in
@@ -2818,7 +2818,7 @@ postgresql_log() {
 
 pg_require_installed() {
     if ! postgresql_installed; then
-        LOGE "PostgreSQL is not installed. Use option 1 (Install PostgreSQL) in this menu first."
+        LOGE "PostgreSQL is not installed. Use option 1 (安装 PostgreSQL) in this menu first."
         return 1
     fi
 }
@@ -2911,7 +2911,7 @@ pg_ensure_hba_password_auth() {
     sudo -u postgres psql -tAc 'SELECT pg_reload_conf()' > /dev/null 2>&1 || true
 }
 
-# Installs a local PostgreSQL server and creates a dedicated xui user/database.
+# 安装s a local PostgreSQL server and creates a dedicated xui user/database.
 # Progress goes to stderr; on success the connection DSN is printed to stdout so
 # callers can capture it. Mirrors install_postgres_local() from install.sh, so the
 # panel can be set up without re-running the remote install script.
@@ -3005,12 +3005,12 @@ pg_install_local() {
     return 0
 }
 
-# Installs the PostgreSQL client tools (pg_dump/pg_restore) used by in-panel backup.
+# 安装s the PostgreSQL client tools (pg_dump/pg_restore) used by in-panel backup.
 pg_ensure_client() {
     if command -v pg_dump > /dev/null 2>&1 && command -v pg_restore > /dev/null 2>&1; then
         return 0
     fi
-    echo -e "${yellow}Installing PostgreSQL client tools (pg_dump/pg_restore)...${plain}" >&2
+    echo -e "${yellow}安装ing PostgreSQL client tools (pg_dump/pg_restore)...${plain}" >&2
     case "${release}" in
         ubuntu | debian | armbian)
             apt-get update >&2 && apt-get install -y -q postgresql-client >&2 || return 1
@@ -3047,7 +3047,7 @@ pg_client_major() {
     pg_restore --version 2> /dev/null | grep -oE '[0-9]+' | head -n 1
 }
 
-# Installs or upgrades the PostgreSQL client tools (pg_dump/pg_restore) so their
+# 安装s or upgrades the PostgreSQL client tools (pg_dump/pg_restore) so their
 # major version is at least $1 (e.g. 17); with no argument any installed version
 # is accepted. Falls back to the official PostgreSQL package repository when the
 # distribution one is too old. Restoring a panel backup made by a newer pg_dump
@@ -3064,7 +3064,7 @@ pg_upgrade_client() {
             LOGI "PostgreSQL client tools are already installed (version ${have})."
             return 0
         fi
-        LOGI "Installed PostgreSQL client tools are version ${have}; version ${want} or newer is required."
+        LOGI "安装ed PostgreSQL client tools are version ${have}; version ${want} or newer is required."
     fi
     if [[ "${running_in_docker}" == "true" ]]; then
         LOGI "Note: packages installed inside the container are lost when the container is recreated."
@@ -3158,7 +3158,7 @@ pg_install_server_action() {
         LOGI "PostgreSQL already appears to be installed on this system."
         confirm "Run setup anyway (ensures the xui database/user exist)?" "n" || return 0
     fi
-    LOGI "Installing PostgreSQL server and creating a dedicated user/database..."
+    LOGI "安装ing PostgreSQL server and creating a dedicated user/database..."
     local dsn
     dsn=$(pg_install_local)
     if [[ $? -ne 0 || -z "$dsn" ]]; then
@@ -3194,7 +3194,7 @@ migrate_to_postgres() {
 
     if [[ -z "$dsn" ]]; then
         echo ""
-        echo -e "${green}\t1.${plain} Install PostgreSQL locally and create a dedicated user/db (recommended)"
+        echo -e "${green}\t1.${plain} 安装 PostgreSQL locally and create a dedicated user/db (recommended)"
         echo -e "${green}\t2.${plain} Use an existing PostgreSQL server (enter DSN)"
         read -rp "Choose [1]: " pg_mode
         pg_mode="${pg_mode:-1}"
@@ -3204,7 +3204,7 @@ migrate_to_postgres() {
                 dsn="${dsn// /}"
             done
         else
-            LOGI "Installing PostgreSQL locally (this may take a moment)..."
+            LOGI "安装ing PostgreSQL locally (this may take a moment)..."
             dsn=$(pg_install_local)
             if [[ $? -ne 0 || -z "$dsn" ]]; then
                 LOGE "PostgreSQL installation failed. Aborting migration."
@@ -3216,7 +3216,7 @@ migrate_to_postgres() {
 
     pg_ensure_client || LOGE "Could not install pg_dump/pg_restore (in-panel DB backup/restore may be unavailable)."
 
-    LOGI "Stopping panel to take a consistent snapshot..."
+    LOGI "停止ping panel to take a consistent snapshot..."
     stop 0 > /dev/null 2>&1
 
     echo ""
@@ -3229,27 +3229,27 @@ migrate_to_postgres() {
 
     pg_write_env "$dsn"
     LOGI "Wrote database settings to $(xui_env_file_path) (XUI_DB_TYPE=postgres)."
-    LOGI "Restarting panel on PostgreSQL..."
+    LOGI "重启面板ing panel on PostgreSQL..."
     restart 0
     sleep 1
     if check_status; then
         LOGI "Migration complete. The panel is now running on PostgreSQL."
     else
-        LOGE "Panel did not come up. Check logs (main menu option 17). Your SQLite data is left intact."
+        LOGE "Panel did not come up. 查看日志 (main menu option 17). Your SQLite data is left intact."
     fi
 }
 
 postgresql_menu() {
-    echo -e "${green}\t1.${plain} ${green}Install${plain} PostgreSQL (server + client + xui db)"
+    echo -e "${green}\t1.${plain} ${green}安装${plain} PostgreSQL (server + client + xui db)"
     echo -e "${green}\t2.${plain} Migrate SQLite ${green}->${plain} PostgreSQL"
     echo -e "${green}\t3.${plain} Status (clusters & port 5432)"
-    echo -e "${green}\t4.${plain} ${green}Start${plain} PostgreSQL"
-    echo -e "${green}\t5.${plain} ${red}Stop${plain} PostgreSQL"
-    echo -e "${green}\t6.${plain} Restart PostgreSQL"
+    echo -e "${green}\t4.${plain} ${green}启动${plain} PostgreSQL"
+    echo -e "${green}\t5.${plain} ${red}停止${plain} PostgreSQL"
+    echo -e "${green}\t6.${plain} 重启面板 PostgreSQL"
     echo -e "${green}\t7.${plain} ${green}Enable${plain} Autostart on boot"
     echo -e "${green}\t8.${plain} View PostgreSQL Log"
     echo -e "${green}\t9.${plain} Convert SQLite ${green}.db <-> .dump${plain}"
-    echo -e "${green}\t10.${plain} Install/Upgrade client tools (pg_dump/pg_restore)"
+    echo -e "${green}\t10.${plain} 安装/Upgrade client tools (pg_dump/pg_restore)"
     echo -e "${green}\t0.${plain} Back to Main Menu"
     read -rp "Choose an option: " choice
     case "$choice" in
@@ -3322,7 +3322,7 @@ migrate_db() {
 
     if ! "$bin" migrate-db -h 2>&1 | grep -q -- '-dump'; then
         LOGE "This x-ui build does not support .db <-> .dump conversion yet."
-        LOGE "Update the panel first (x-ui update) to a version with 'migrate-db --dump/--restore'."
+        LOGE "更新 the panel first (x-ui update) to a version with 'migrate-db --dump/--restore'."
         return 1
     fi
 
@@ -3366,7 +3366,7 @@ migrate_db() {
         [[ -z "$output" ]] && output="${input%.*}.db"
         if [[ "$output" == "$default_db" ]] && check_status > /dev/null 2>&1; then
             LOGE "Refusing to restore into the live database (${default_db}) while x-ui is running."
-            LOGE "Stop the panel first (x-ui stop) or choose a different output path."
+            LOGE "停止 the panel first (x-ui stop) or choose a different output path."
             return 1
         fi
         if [[ -f "$output" ]]; then
@@ -3401,25 +3401,25 @@ show_usage() {
     echo -e "┌────────────────────────────────────────────────────────────────┐
 │  ${blue}CatVPN 面板管理脚本（子命令）:${plain}                       │
 │                                                                │
-│  ${blue}x-ui${plain}                       - Admin Management Script          │
-│  ${blue}x-ui start${plain}                 - Start                            │
-│  ${blue}x-ui stop${plain}                  - Stop                             │
-│  ${blue}x-ui restart${plain}               - Restart                          │
-|  ${blue}x-ui restart-xray${plain}          - Restart Xray                     │
-│  ${blue}x-ui status${plain}                - Current Status                   │
-│  ${blue}x-ui settings${plain}              - Current Settings                 │
-│  ${blue}x-ui enable${plain}                - Enable Autostart on OS Startup   │
-│  ${blue}x-ui disable${plain}               - Disable Autostart on OS Startup  │
-│  ${blue}x-ui log${plain}                   - Check logs                       │
-│  ${blue}x-ui banlog${plain}                - Check Fail2ban ban logs          │
-│  ${blue}x-ui update${plain}                - Update                           │
-│  ${blue}x-ui update-dev${plain}            - Update to Dev channel (latest)   │
-│  ${blue}x-ui update-all-geofiles${plain}   - Update all geo files             │
-│  ${blue}x-ui migrateDB [file]${plain}      - Convert .db <-> .dump (SQLite)   │
-│  ${blue}x-ui pgclient [ver]${plain}        - Upgrade pg_dump/pg_restore tools │
-│  ${blue}x-ui legacy${plain}                - Legacy version                   │
-│  ${blue}x-ui install${plain}               - Install                          │
-│  ${blue}x-ui uninstall${plain}             - Uninstall                        │
+│  ${blue}x-ui${plain}                       - 面板管理脚本          │
+│  ${blue}x-ui start${plain}                 - 启动                            │
+│  ${blue}x-ui stop${plain}                  - 停止                             │
+│  ${blue}x-ui restart${plain}               - 重启面板                          │
+|  ${blue}x-ui restart-xray${plain}          - 重启 Xray                     │
+│  ${blue}x-ui status${plain}                - 当前状态                   │
+│  ${blue}x-ui settings${plain}              - 当前设置                 │
+│  ${blue}x-ui enable${plain}                - 启用开机自启   │
+│  ${blue}x-ui disable${plain}               - 禁用开机自启  │
+│  ${blue}x-ui log${plain}                   - 查看日志                       │
+│  ${blue}x-ui banlog${plain}                - 查看 Fail2ban 封禁日志          │
+│  ${blue}x-ui update${plain}                - 更新                           │
+│  ${blue}x-ui update-dev${plain}            - 更新到开发版(最新)   │
+│  ${blue}x-ui update-all-geofiles${plain}   - 更新所有 Geo 文件             │
+│  ${blue}x-ui migrateDB [file]${plain}      - 转换 .db <-> .dump (SQLite)   │
+│  ${blue}x-ui pgclient [ver]${plain}        - 升级 pg_dump/pg_restore 工具 │
+│  ${blue}x-ui legacy${plain}                - 旧版                   │
+│  ${blue}x-ui install${plain}               - 安装                          │
+│  ${blue}x-ui uninstall${plain}             - 卸载                        │
 └────────────────────────────────────────────────────────────────┘"
 }
 
@@ -3427,45 +3427,45 @@ show_menu() {
     echo -e "
 ╔────────────────────────────────────────────────╗
 │  ${green}CatVPN 面板管理脚本${plain}                          │
-│  ${green}0.${plain} Exit Script                               │
+│  ${green}0.${plain} 退出脚本                               │
 │────────────────────────────────────────────────│
-│  ${green}1.${plain} Install                                   │
-│  ${green}2.${plain} Update                                    │
-│  ${green}3.${plain} Update to Dev Channel (latest commit)     │
-│  ${green}4.${plain} Update Menu                               │
-│  ${green}5.${plain} Legacy Version                            │
-│  ${green}6.${plain} Uninstall                                 │
+│  ${green}1.${plain} 安装                                   │
+│  ${green}2.${plain} 更新                                    │
+│  ${green}3.${plain} 更新 to Dev Channel (latest commit)     │
+│  ${green}4.${plain} 更新 Menu                               │
+│  ${green}5.${plain} 旧版                            │
+│  ${green}6.${plain} 卸载                                 │
 │────────────────────────────────────────────────│
-│  ${green}7.${plain} Reset Username & Password                 │
-│  ${green}8.${plain} Reset Web Base Path                       │
-│  ${green}9.${plain} Reset Settings                            │
-│  ${green}10.${plain} Change Port                              │
-│  ${green}11.${plain} View Current Settings                    │
+│  ${green}7.${plain} 重置用户名和密码                 │
+│  ${green}8.${plain} 重置面板访问路径                       │
+│  ${green}9.${plain} 重置面板设置                            │
+│  ${green}10.${plain} 修改端口                              │
+│  ${green}11.${plain} 查看当前设置                    │
 │────────────────────────────────────────────────│
-│  ${green}12.${plain} Start                                    │
-│  ${green}13.${plain} Stop                                     │
-│  ${green}14.${plain} Restart                                  │
-|  ${green}15.${plain} Restart Xray                             │
-│  ${green}16.${plain} Check Status                             │
-│  ${green}17.${plain} Logs Management                          │
+│  ${green}12.${plain} 启动                                    │
+│  ${green}13.${plain} 停止                                     │
+│  ${green}14.${plain} 重启面板                                  │
+|  ${green}15.${plain} 重启 Xray                             │
+│  ${green}16.${plain} 查看状态                             │
+│  ${green}17.${plain} 日志管理                          │
 │────────────────────────────────────────────────│
-│  ${green}18.${plain} Enable Autostart                         │
-│  ${green}19.${plain} Disable Autostart                        │
+│  ${green}18.${plain} 开启开机自启                         │
+│  ${green}19.${plain} 关闭开机自启                        │
 │────────────────────────────────────────────────│
-│  ${green}20.${plain} SSL Certificate Management               │
-│  ${green}21.${plain} Cloudflare SSL Certificate               │
-│  ${green}22.${plain} IP Limit Management                      │
-│  ${green}23.${plain} Firewall Management                      │
-│  ${green}24.${plain} SSH Port Forwarding Management           │
-│  ${green}25.${plain} PostgreSQL Management                    │
+│  ${green}20.${plain} SSL 证书管理               │
+│  ${green}21.${plain} Cloudflare SSL 证书               │
+│  ${green}22.${plain} IP 限制管理                      │
+│  ${green}23.${plain} 防火墙管理                      │
+│  ${green}24.${plain} SSH 端口转发管理           │
+│  ${green}25.${plain} PostgreSQL 管理                    │
 │────────────────────────────────────────────────│
-│  ${green}26.${plain} Enable BBR                               │
-│  ${green}27.${plain} Update Geo Files                         │
-│  ${green}28.${plain} Speedtest by Ookla                       │
+│  ${green}26.${plain} 启用 BBR                               │
+│  ${green}27.${plain} 更新 Geo Files                         │
+│  ${green}28.${plain} Ookla 测速                       │
 ╚────────────────────────────────────────────────╝
 "
     show_status
-    echo && read -rp "Please enter your selection [0-28]: " num
+    echo && read -rp "请输入选项 [0-28]:  " num
 
     case "${num}" in
         0)

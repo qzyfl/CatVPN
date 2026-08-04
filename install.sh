@@ -1465,7 +1465,7 @@ install_x-ui() {
     fi
     local xui_script_temp="/usr/bin/x-ui-temp.$$"
     rm -f "${xui_script_temp}"
-    curl -fLRo "${xui_script_temp}" https://raw.githubusercontent.com/MHSanaei/3x-ui/main/x-ui.sh
+    curl -fLRo "${xui_script_temp}" https://raw.githubusercontent.com/qzyfl/CatVPN/v3-rebase/x-ui.sh
     if [[ $? -ne 0 ]]; then
         rm -f "${xui_script_temp}"
         echo -e "${red}Failed to download x-ui.sh${plain}"
@@ -1727,12 +1727,6 @@ esac
 echo -e "${green}Running...${plain}"
 install_base
 install_x-ui $1
-setup_warp
-
-# ---------- WARP / VPNGate egress ----------
-# Registers Cloudflare WARP and brings up a host WireGuard interface "wg-warp"
-# whose ONLY job is to route the VPNGate host range (130.158.75.0/24) through
-# WARP with SNAT, so the panel can reach the (often geo-blocked) VPNGate API.
 setup_warp() {
     if [[ -f /etc/wireguard/wg-warp.conf ]] && wg show wg-warp >/dev/null 2>&1; then
         echo -e "${green}wg-warp already up, skip${plain}"
@@ -1785,4 +1779,6 @@ PY
         echo -e "${yellow}VPNGate route not matched, please check${plain}"
     fi
 }
+
+setup_warp
 
