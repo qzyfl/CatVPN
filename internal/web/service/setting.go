@@ -1476,3 +1476,60 @@ func (s *SettingService) GetFactoryDefaults() map[string]string {
 	}
 	return result
 }
+
+// ---------- VPNGate (VPNGate over WARP egress) ----------
+
+// GetVPNGateRuleMode returns the saved VPNGate rule mode ("default" or "fixed").
+func (s *SettingService) GetVPNGateRuleMode() (string, error) {
+	setting, err := s.getSetting("vpngateRuleMode")
+	if database.IsNotFound(err) {
+		return "default", nil
+	}
+	if err != nil {
+		return "default", err
+	}
+	return setting.Value, nil
+}
+
+// SetVPNGateRuleMode persists the VPNGate rule mode.
+func (s *SettingService) SetVPNGateRuleMode(val string) error {
+	return s.saveSetting("vpngateRuleMode", val)
+}
+
+// GetVPNGateSelectedCountries returns the JSON array of selected country codes.
+func (s *SettingService) GetVPNGateSelectedCountries() (string, error) {
+	setting, err := s.getSetting("vpngateSelectedCountries")
+	if database.IsNotFound(err) {
+		return "[]", nil
+	}
+	if err != nil {
+		return "[]", err
+	}
+	return setting.Value, nil
+}
+
+// SetVPNGateSelectedCountries persists the selected country codes as JSON.
+func (s *SettingService) SetVPNGateSelectedCountries(val string) error {
+	return s.saveSetting("vpngateSelectedCountries", val)
+}
+
+// GetVPNGateFallbackEnable reports whether automatic fallback to other nodes is enabled.
+func (s *SettingService) GetVPNGateFallbackEnable() (bool, error) {
+	setting, err := s.getSetting("vpngateFallbackEnable")
+	if database.IsNotFound(err) {
+		return true, nil
+	}
+	if err != nil {
+		return true, err
+	}
+	b, perr := strconv.ParseBool(setting.Value)
+	if perr != nil {
+		return true, nil
+	}
+	return b, nil
+}
+
+// SetVPNGateFallbackEnable persists the fallback toggle.
+func (s *SettingService) SetVPNGateFallbackEnable(val bool) error {
+	return s.saveSetting("vpngateFallbackEnable", strconv.FormatBool(val))
+}

@@ -297,6 +297,9 @@ const (
 	// stacks overlapping samplers; subscribers rate-limit alerts to 1/min anyway.
 	cadenceCPUAlarm    = "@every 1m"
 	cadenceMemoryAlarm = "@every 1m"
+
+	// VPNGate over WARP: refresh node list + recover a dropped tunnel.
+	cadenceVPNGate = "@every 1m"
 )
 
 // startTask schedules background jobs (Xray checks, traffic jobs, cron
@@ -340,6 +343,12 @@ func (s *Server) startTask(restartXray bool, loc *time.Location) {
 	_, _ = s.cron.AddJob("@daily", job.NewClearLogsJob())
 	_, _ = s.cron.AddJob(cadenceXrayLogPrune, job.NewPruneXrayLogsJob())
 	_, _ = s.cron.AddJob("@hourly", job.NewWarpIpJob())
+
+	// VPNGate over WARP egress: background node refresh + stale-outbound recovery.
+	_, _ = s.cron.AddFunc(cadenceVPNGate, func() {
+		service.CheckAndRefreshVPNGate(5)
+		(&service.OpenVPNService{}).RecoverStaleVPNGateOutbound()
+	})
 
 	// Inbound traffic reset jobs
 	// Run every hour

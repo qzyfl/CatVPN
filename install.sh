@@ -1681,3 +1681,62 @@ install_x-ui() {
 echo -e "${green}Running...${plain}"
 install_base
 install_x-ui $1
+setup_warp
+
+# ---------- WARP / VPNGate egress ----------
+# Registers Cloudflare WARP and brings up a host WireGuard interface "wg-warp"
+# whose ONLY job is to route the VPNGate host range (130.158.75.0/24) through
+# WARP with SNAT, so the panel can reach the (often geo-blocked) VPNGate API.
+setup_warp() {
+    if [[ -f /etc/wireguard/wg-warp.conf ]] && wg show wg-warp >/dev/null 2>&1; then
+        echo -e "${green}wg-warp already up, skip${plain}"
+        return
+    fi
+    echo -e "${green}Setting up Cloudflare WARP (wg-warp for VPNGate 130.158.75.0/24)...${plain}"
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get install -y -qq wireguard-tools 2>/dev/null || true
+    modprobe wireguard 2>/dev/null || true
+    if [[ ! -x /usr/local/bin/wgcf ]]; then
+        curl -sL -o /usr/local/bin/wgcf "https://github.com/ViRb3/wgcf/releases/download/v2.2.32/wgcf_2.2.32_linux_amd64" && chmod +x /usr/local/bin/wgcf
+    fi
+    mkdir -p /etc/wireguard && cd /etc/wireguard
+    [[ -f wgcf-account.toml ]] || wgcf register --accept-tos
+    wgcf generate
+    python3 - <<'PY'
+import re, sys
+try:
+    src = open("wgcf-profile.conf").read()
+    pk = re.search(r"PrivateKey = (\S+)", src).group(1)
+    addr = re.search(r"Address = (\S+)", src).group(1).split(",")[0]
+    peer = re.search(r"PublicKey = (\S+)", src).group(1)
+    ep = re.search(r"Endpoint = (\S+)", src).group(1)
+    src_ip = addr.split("/")[0]
+except AttributeError as e:
+    print("[ERROR] wgcf-profile.conf parse failed:", e, file=sys.stderr); sys.exit(1)
+conf = """[Interface]
+PrivateKey = %s
+Address = %s
+Table = off
+PostUp = ip route add 130.158.75.0/24 dev %%i; iptables -t nat -A POSTROUTING -o %%i -j SNAT --to-source %s
+PreDown = ip route del 130.158.75.0/24 dev %%i; iptables -t nat -D POSTROUTING -o %%i -j SNAT --to-source %s
+
+[Peer]
+PublicKey = %s
+Endpoint = %s
+AllowedIPs = 0.0.0.0/0, ::/0
+PersistentKeepalive = 25
+""" % (pk, addr, src_ip, src_ip, peer, ep)
+open("/etc/wireguard/wg-warp.conf", "w").write(conf)
+print("wg-warp.conf written, src_ip=", src_ip)
+PY
+    wg-quick down wg-warp 2>/dev/null || true
+    wg-quick up wg-warp
+    systemctl enable wg-quick@wg-warp 2>/dev/null || true
+    sleep 2
+    if ip route get 130.158.75.44 >/dev/null 2>&1; then
+        echo -e "${green}VPNGate route via wg-warp OK${plain}"
+    else
+        echo -e "${yellow}VPNGate route not matched, please check${plain}"
+    fi
+}
+
