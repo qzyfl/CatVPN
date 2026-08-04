@@ -175,8 +175,9 @@ update_menu() {
 }
 
 # Function to handle the deletion of the script file
+# main 分支命令部署在 /usr/local/bin/x-ui, 同时兼容上游 /usr/bin/x-ui, 两种路径都清理
 delete_script() {
-    rm -f /usr/bin/ml /usr/bin/x-ui
+    rm -f /usr/bin/ml /usr/bin/x-ui /usr/local/bin/ml /usr/local/bin/x-ui
     exit 0
 }
 
@@ -235,7 +236,31 @@ uninstall() {
     rm /root/cert/ -rf
     rm /root/.acme.sh/ -rf
     rm ${xui_folder}/ -rf
-    rm -rf /usr/local/etc/x-ui /var/lib/x-ui /tmp/x-mili-* /tmp/vpngate-check-*.ovpn
+    rm -rf /usr/local/etc/x-ui /var/lib/x-ui /tmp/x-mili-* /tmp/vpngate-check-*.ovpn /tmp/catvpn-src
+
+    # 清理 CatVPN 专属的 Cloudflare WARP 出口 (wg-warp, 仅供 VPNGate 130.158.75.0/24)
+    systemctl stop wg-quick@wg-warp 2>/dev/null || true
+    wg-quick down wg-warp 2>/dev/null || true
+    ip link del wg-warp 2>/dev/null || true
+    systemctl disable wg-quick@wg-warp 2>/dev/null || true
+    rm -f /etc/wireguard/wg-warp.conf /etc/wireguard/wgcf-account.toml /etc/wireguard/wgcf-profile.conf
+    rm -f /usr/local/bin/wgcf
+
+    # 清理安装时创建的小内存 4G swap (安全判断, 避免 OOM-killer)
+    if [[ -f /swapfile ]]; then
+        swap_used=$(awk '$1=="/swapfile"{print $4+0}' /proc/swaps 2>/dev/null)
+        mem_avail=$(awk '/^MemAvailable:/{print $2+0}' /proc/meminfo 2>/dev/null)
+        if [[ -n "$swap_used" && -n "$mem_avail" && "$swap_used" -lt $((mem_avail/2)) ]]; then
+            swapoff /swapfile 2>/dev/null && rm -f /swapfile
+        else
+            echo -e "${yellow}内存不足以安全关闭 swap, 已保留 /swapfile, 建议重启后手动执行: swapoff /swapfile && rm -f /swapfile${plain}"
+        fi
+    fi
+
+    # 清理本脚本安装的 Go 工具链
+    if [[ -d /usr/local/go ]] && [[ ! "$(command -v go 2>/dev/null)" =~ "/usr/local" ]]; then
+        rm -rf /usr/local/go
+    fi
 
     if [ -d "/etc/fail2ban" ]; then
         rm -f /etc/fail2ban/filter.d/3x-ipl.conf
@@ -244,7 +269,8 @@ uninstall() {
         systemctl restart fail2ban >/dev/null 2>&1 || true
     fi
 
-    rm -f /usr/bin/ml /usr/bin/x-ui
+    # 命令部署在 /usr/local/bin/x-ui, 同时兼容上游 /usr/bin/x-ui, 两种路径都清理
+    rm -f /usr/bin/ml /usr/bin/x-ui /usr/local/bin/ml /usr/local/bin/x-ui
 
     echo ""
     if is_zh; then

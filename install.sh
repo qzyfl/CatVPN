@@ -83,9 +83,19 @@ do_uninstall() {
     rm -rf /tmp/catvpn-src 2>/dev/null
 
     # 6. 清理安装时创建的小内存 4G swap
+    # 注意: swapoff 会把 swap 页换回 RAM, 在 1.7G 小内存机器上若 swap 占用高
+    # 可能触发 OOM-killer 杀掉本脚本 (表现为 "killed" 且不打印卸载完成提示)。
+    # 因此先做安全判断: 仅当 swap 已用量 < MemAvailable 一半时才关闭, 否则保留并告警。
     if [[ -f /swapfile ]]; then
-        swapoff /swapfile 2>/dev/null
-        rm -f /swapfile
+        local swap_used swap_total mem_avail
+        swap_used=$(awk '$1=="/swapfile"{print $4+0}' /proc/swaps 2>/dev/null)
+        mem_avail=$(awk '/^MemAvailable:/{print $2+0}' /proc/meminfo 2>/dev/null)
+        if [[ -n "$swap_used" && -n "$mem_avail" && "$swap_used" -lt $((mem_avail/2)) ]]; then
+            swapoff /swapfile 2>/dev/null && rm -f /swapfile
+        else
+            is_zh && echo -e "${yellow}[CatVPN]${plain} 内存不足以安全关闭 swap, 已保留 /swapfile, 建议重启后手动执行: swapoff /swapfile && rm -f /swapfile" \
+                  || echo -e "${yellow}[CatVPN]${plain} Not enough RAM to safely disable swap; /swapfile kept. After reboot run: swapoff /swapfile && rm -f /swapfile"
+        fi
     fi
 
     # 7. 清理 Go 工具链 (仅本脚本安装的)
