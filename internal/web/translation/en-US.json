@@ -109,7 +109,8 @@
     "apiDocs": "API Docs",
     "donate": "Donate",
     "docs": "Documentation",
-    "openMenu": "Open menu"
+    "openMenu": "Open menu",
+    "vpngate": "VPNGate"
   },
   "pages": {
     "login": {
@@ -1837,6 +1838,50 @@
       },
       "defaultOutbound": "Default Outbound",
       "defaultOutboundDesc": "Traffic that does not match any routing rule uses this outbound (Xray uses the first outbound in the list)."
+    },
+    "vpngate": {
+      "title": "VPNGate Nodes",
+      "description": "Browse public VPNGate nodes and route panel egress through a WireGuard-WARP tunnel.",
+      "status": "Connection Status",
+      "notConnected": "Not connected",
+      "connected": "Connected",
+      "connecting": "Connecting…",
+      "phase": "Phase",
+      "message": "Detail",
+      "tunIP": "Tunnel IP",
+      "tunDev": "Tunnel Device",
+      "node": "Current Node",
+      "settings": "Egress Settings",
+      "ruleMode": "Routing Mode",
+      "ruleModeDefault": "Smart routing (default)",
+      "ruleModeFixed": "Fixed country",
+      "selectedCountries": "Selected Countries",
+      "selectCountries": "Select countries",
+      "fallbackEnable": "Enable Failover",
+      "save": "Save Settings",
+      "servers": "Available Nodes",
+      "refresh": "Refresh List",
+      "connectSelected": "Connect Selected Node",
+      "disconnect": "Disconnect",
+      "cancel": "Cancel",
+      "repair": "Repair",
+      "connect": "Connect",
+      "selectFirst": "Select a node first",
+      "emptyServers": "No available nodes, click refresh to retry",
+      "toasts": {
+        "connectStart": "Connecting to {{country}}…",
+        "connectFail": "Failed to start VPNGate connection",
+        "disconnected": "VPNGate disconnected",
+        "disconnectFail": "Failed to disconnect VPNGate",
+        "cancelled": "Connection attempt cancelled",
+        "cancelFail": "Failed to cancel connection",
+        "repairDone": "VPNGate repair triggered",
+        "repairFail": "Failed to repair VPNGate",
+        "refreshed": "Node list refreshed",
+        "refreshFail": "Failed to refresh node list",
+        "settingsSaved": "VPNGate settings saved",
+        "settingsFail": "Failed to save VPNGate settings"
+      }
     }
   },
   "tgbot": {

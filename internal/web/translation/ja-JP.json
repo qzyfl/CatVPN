@@ -109,7 +109,8 @@
     "donate": "寄付",
     "hosts": "ホスト",
     "docs": "ドキュメント",
-    "openMenu": "メニューを開く"
+    "openMenu": "メニューを開く",
+    "vpngate": "VPNGate"
   },
   "pages": {
     "login": {
@@ -1837,6 +1838,9 @@
         "badTag": "無効なタグ",
         "badVlessRoute": "0〜65535 の単一の数値を入力してください"
       }
+    },
+    "vpngate": {
+      "title": "VPNGate Nodes"
     }
   },
   "tgbot": {

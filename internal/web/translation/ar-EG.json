@@ -109,7 +109,8 @@
     "donate": "تبرع",
     "hosts": "المضيفات",
     "docs": "التوثيق",
-    "openMenu": "فتح القائمة"
+    "openMenu": "فتح القائمة",
+    "vpngate": "VPNGate"
   },
   "pages": {
     "login": {
@@ -1837,6 +1838,9 @@
         "badTag": "وسم غير صالح",
         "badVlessRoute": "أدخل رقماً واحداً بين 0 و65535"
       }
+    },
+    "vpngate": {
+      "title": "VPNGate Nodes"
     }
   },
   "tgbot": {

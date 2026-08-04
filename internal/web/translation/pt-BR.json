@@ -109,7 +109,8 @@
     "donate": "Doar",
     "hosts": "Hosts",
     "docs": "Documentação",
-    "openMenu": "Abrir menu"
+    "openMenu": "Abrir menu",
+    "vpngate": "VPNGate"
   },
   "pages": {
     "login": {
@@ -1837,6 +1838,9 @@
         "badTag": "Tag inválida",
         "badVlessRoute": "Insira um único número entre 0 e 65535"
       }
+    },
+    "vpngate": {
+      "title": "VPNGate Nodes"
     }
   },
   "tgbot": {

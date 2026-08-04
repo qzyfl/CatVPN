@@ -109,7 +109,8 @@
     "donate": "捐赠",
     "hosts": "主机",
     "docs": "文档",
-    "openMenu": "打开菜单"
+    "openMenu": "打开菜单",
+    "vpngate": "VPNGate"
   },
   "pages": {
     "login": {
@@ -1836,6 +1837,50 @@
         "delete": "删除主机",
         "badTag": "无效的标签",
         "badVlessRoute": "请输入 0 到 65535 之间的单个数字"
+      }
+    },
+    "vpngate": {
+      "title": "VPNGate 节点",
+      "description": "浏览公开 VPNGate 节点，并将面板出口流量经 WireGuard-WARP 隧道路由。",
+      "status": "连接状态",
+      "notConnected": "未连接",
+      "connected": "已连接",
+      "connecting": "连接中…",
+      "phase": "阶段",
+      "message": "详情",
+      "tunIP": "隧道 IP",
+      "tunDev": "隧道设备",
+      "node": "当前节点",
+      "settings": "出口设置",
+      "ruleMode": "路由模式",
+      "ruleModeDefault": "智能路由（默认）",
+      "ruleModeFixed": "固定国家",
+      "selectedCountries": "指定国家",
+      "selectCountries": "请选择国家",
+      "fallbackEnable": "启用故障转移",
+      "save": "保存设置",
+      "servers": "可用节点",
+      "refresh": "刷新列表",
+      "connectSelected": "连接选中节点",
+      "disconnect": "断开连接",
+      "cancel": "取消连接",
+      "repair": "修复连接",
+      "connect": "连接",
+      "selectFirst": "请先选择一个节点",
+      "emptyServers": "暂无可用节点，点击刷新重试",
+      "toasts": {
+        "connectStart": "正在连接 {{country}}…",
+        "connectFail": "启动 VPNGate 连接失败",
+        "disconnected": "VPNGate 已断开",
+        "disconnectFail": "断开 VPNGate 失败",
+        "cancelled": "已取消连接尝试",
+        "cancelFail": "取消连接失败",
+        "repairDone": "已触发 VPNGate 修复",
+        "repairFail": "修复 VPNGate 失败",
+        "refreshed": "节点列表已刷新",
+        "refreshFail": "刷新节点列表失败",
+        "settingsSaved": "VPNGate 设置已保存",
+        "settingsFail": "保存 VPNGate 设置失败"
       }
     }
   },

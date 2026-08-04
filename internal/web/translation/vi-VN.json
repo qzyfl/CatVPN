@@ -109,7 +109,8 @@
     "donate": "Quyên góp",
     "hosts": "Hosts",
     "docs": "Tài liệu",
-    "openMenu": "Mở menu"
+    "openMenu": "Mở menu",
+    "vpngate": "VPNGate"
   },
   "pages": {
     "login": {
@@ -1837,6 +1838,9 @@
         "badTag": "Tag không hợp lệ",
         "badVlessRoute": "Nhập một số duy nhất từ 0 đến 65535"
       }
+    },
+    "vpngate": {
+      "title": "VPNGate Nodes"
     }
   },
   "tgbot": {

@@ -11,6 +11,7 @@ import {
   ClusterOutlined,
   CodeOutlined,
   DashboardOutlined,
+  DeploymentUnitOutlined,
   DatabaseOutlined,
   ExportOutlined,
   GithubOutlined,
@@ -47,7 +48,7 @@ const railStyle = { '--sider-rail': `${RAIL_WIDTH}px` } as CSSProperties;
 
 let hoveredAcrossRemounts = false;
 
-type IconName = 'dashboard' | 'inbound' | 'team' | 'groups' | 'setting' | 'tool' | 'cluster' | 'hosts' | 'logout' | 'apidocs' | 'outbound' | 'routing';
+type IconName = 'dashboard' | 'inbound' | 'team' | 'groups' | 'setting' | 'tool' | 'cluster' | 'hosts' | 'logout' | 'apidocs' | 'outbound' | 'routing' | 'vpngate';
 
 const iconByName: Record<IconName, ComponentType> = {
   dashboard: DashboardOutlined,
@@ -62,6 +63,7 @@ const iconByName: Record<IconName, ComponentType> = {
   apidocs: ApiOutlined,
   outbound: ExportOutlined,
   routing: SwapOutlined,
+  vpngate: DeploymentUnitOutlined,
 };
 
 function DocsButton({ ariaLabel }: { ariaLabel: string }) {
@@ -160,6 +162,7 @@ export default function AppSidebar() {
     { key: '/settings', icon: 'setting', title: t('menu.settings') },
     { key: '/xray', icon: 'tool', title: t('menu.xray') },
     { key: '/api-docs', icon: 'apidocs', title: t('menu.apiDocs') },
+    { key: '/vpngate', icon: 'vpngate', title: t('menu.vpngate') },
     { key: LOGOUT_KEY, icon: 'logout', title: t('logout') },
   ], [t]);
 

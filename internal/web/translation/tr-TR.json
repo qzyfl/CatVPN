@@ -109,7 +109,8 @@
     "donate": "Bağış Yap",
     "hosts": "Host'lar",
     "docs": "Belgeler",
-    "openMenu": "Menüyü aç"
+    "openMenu": "Menüyü aç",
+    "vpngate": "VPNGate"
   },
   "pages": {
     "login": {
@@ -1837,6 +1838,9 @@
         "badTag": "Geçersiz etiket",
         "badVlessRoute": "0 ile 65535 arasında tek bir sayı girin"
       }
+    },
+    "vpngate": {
+      "title": "VPNGate Nodes"
     }
   },
   "tgbot": {

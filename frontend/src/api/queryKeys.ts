@@ -39,4 +39,11 @@ export const keys = {
     config: () => ['xray', 'config'] as const,
     outboundsTraffic: () => ['xray', 'outboundsTraffic'] as const,
   },
+  vpngate: {
+    root: () => ['vpngate'] as const,
+    servers: (refresh: boolean, includeUnavailable: boolean) =>
+      ['vpngate', 'servers', refresh, includeUnavailable] as const,
+    status: () => ['vpngate', 'status'] as const,
+    settings: () => ['vpngate', 'settings'] as const,
+  },
 } as const;
