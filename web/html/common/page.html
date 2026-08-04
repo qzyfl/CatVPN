@@ -7,6 +7,10 @@
   <meta name="renderer" content="webkit">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="noindex,nofollow">
+  {{/* 首屏关键资源预加载：提前并行拉取最重的 antd/vue，缩短面板首屏时间 */}}
+  <link rel="preload" href="{{ .base_path }}assets/ant-design-vue/antd.min.css" as="style">
+  <link rel="preload" href="{{ .base_path }}assets/vue/vue.min.js" as="script">
+  <link rel="preload" href="{{ .base_path }}assets/ant-design-vue/antd.min.js" as="script">
   <link rel="stylesheet" href="{{ .base_path }}assets/ant-design-vue/antd.min.css">
   <link rel="stylesheet" href="{{ .base_path }}assets/css/custom.min.css?{{ .cur_ver }}">
   <link rel="icon" href="{{ .base_path }}assets/catvpn-logo.png">
