@@ -18,6 +18,7 @@ set -e
 
 APP_NAME="CatVPN"
 REPO="https://github.com/qzyfl/CatVPN"
+REPO_RAW="${REPO_RAW:-https://raw.githubusercontent.com/qzyfl/CatVPN/main}"
 INSTALL_DIR="/usr/local/x-ui"
 DATA_DIR="/etc/x-ui"
 LANG_DIR="/etc/x-mili"
@@ -55,18 +56,18 @@ install_runtime_deps() {
     if command -v apt-get >/dev/null 2>&1; then
         is_zh && warn "若系统自动更新占用 apt 锁, 将等待释放。" || warn "Waiting for apt/dpkg lock if needed."
         apt-get -o DPkg::Lock::Timeout=1800 update -qq
-        apt-get -o DPkg::Lock::Timeout=1800 install -y -qq ca-certificates curl tar gzip git wget jq \
+        apt-get -o DPkg::Lock::Timeout=1800 install -y -qq ca-certificates curl tar gzip git wget jq unzip iptables \
             build-essential wireguard-tools
     elif command -v dnf >/dev/null 2>&1; then
-        dnf install -y ca-certificates curl tar gzip git wget jq gcc make wireguard-tools
+        dnf install -y ca-certificates curl tar gzip git wget jq unzip iptables gcc make wireguard-tools
     elif command -v yum >/dev/null 2>&1; then
-        yum install -y ca-certificates curl tar gzip git wget jq gcc make wireguard-tools
+        yum install -y ca-certificates curl tar gzip git wget jq unzip iptables gcc make wireguard-tools
     elif command -v apk >/dev/null 2>&1; then
-        apk add --no-cache ca-certificates curl tar gzip git wget jq build-base wireguard-tools
+        apk add --no-cache ca-certificates curl tar gzip git wget jq unzip iptables build-base wireguard-tools
     elif command -v pacman >/dev/null 2>&1; then
-        pacman -Sy --noconfirm ca-certificates curl tar gzip git wget jq base-devel wireguard-tools
+        pacman -Sy --noconfirm ca-certificates curl tar gzip git wget jq unzip iptables base-devel wireguard-tools
     elif command -v zypper >/dev/null 2>&1; then
-        zypper refresh; zypper -q install -y ca-certificates curl tar gzip git wget jq gcc make wireguard-tools
+        zypper refresh; zypper -q install -y ca-certificates curl tar gzip git wget jq unzip iptables gcc make wireguard-tools
     else
         fail "不支持的包管理器 / Unsupported package manager"
     fi
@@ -177,12 +178,72 @@ build_panel() {
     is_zh && log "编译完成, 大小 $(stat -c%s "$INSTALL_DIR/x-ui" 2>/dev/null) 字节" || log "Build done, size $(stat -c%s "$INSTALL_DIR/x-ui" 2>/dev/null) bytes"
 }
 
+# ---------- 安装 Xray-core 内核 (面板运行依赖, 修复 bin/ 缺失) ----------
+install_xray() {
+    local panel_name arch_variant xray_tag xray_url tmp_dir
+    case "$(detect_arch)" in
+        amd64) panel_name="amd64"; arch_variant="64" ;;
+        arm64) panel_name="arm64"; arch_variant="arm64-v8a" ;;
+        i386)  panel_name="386";   arch_variant="32" ;;
+        *)     panel_name="amd64"; arch_variant="64" ;;
+    esac
+    # 32 位 ARM: 面板把 GOARCH=arm 映射成 arm32, 文件名需对应
+    case "$(uname -m)" in
+        armv5*) panel_name="arm32"; arch_variant="arm32-v5" ;;
+        armv6*) panel_name="arm32"; arch_variant="arm32-v6" ;;
+        armv7*|armv8l|arm) panel_name="arm32"; arch_variant="arm32-v7a" ;;
+    esac
+
+    # 幂等: 已存在且非强制则跳过
+    if [[ -x "$INSTALL_DIR/bin/xray-linux-${panel_name}" ]] && [[ "${FORCE:-0}" != "1" ]]; then
+        is_zh && log "Xray-core (${panel_name}) 已存在, 跳过" || log "Xray-core (${panel_name}) present, skip"
+        return
+    fi
+
+    is_zh && log "安装 Xray-core 内核 (${panel_name}) 到 bin/ 目录..." || log "Installing Xray-core (${panel_name}) into bin/..."
+    mkdir -p "$INSTALL_DIR/bin"
+
+    # 获取 Xray-core 最新版本 (GitHub API 受限时用兜底固定版本)
+    xray_tag=$(curl -Ls --retry 5 --retry-delay 3 --connect-timeout 15 --max-time 30 "https://api.github.com/repos/XTLS/Xray-core/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+    if [[ -z "$xray_tag" || "$xray_tag" == "null" ]]; then
+        xray_tag="v26.4.25"
+        warn "无法获取 Xray-core 最新版本, 使用兜底版本 $xray_tag"
+    fi
+    xray_url="https://github.com/XTLS/Xray-core/releases/download/${xray_tag}/Xray-linux-${arch_variant}.zip"
+    tmp_dir=$(mktemp -d -t catvpn-xray.XXXXXX)
+    if ! curl -fL --retry 5 --retry-delay 3 --connect-timeout 15 --max-time 180 -o "$tmp_dir/xray.zip" "$xray_url"; then
+        rm -rf "$tmp_dir"
+        warn "下载 Xray-core 失败 (${xray_url}), 跳过 (面板将无法代理, 请检查网络后重跑)"; return 1
+    fi
+    ( cd "$tmp_dir" && unzip -o xray.zip >/dev/null 2>&1 ) || { rm -rf "$tmp_dir"; warn "解压 Xray-core 失败, 跳过"; return 1; }
+    if [[ ! -f "$tmp_dir/xray" ]]; then
+        rm -rf "$tmp_dir"; warn "Xray-core 压缩包缺少 xray 二进制, 跳过"; return 1
+    fi
+    mv "$tmp_dir/xray" "$INSTALL_DIR/bin/xray-linux-${panel_name}"
+    chmod +x "$INSTALL_DIR/bin/xray-linux-${panel_name}"
+    rm -rf "$tmp_dir"
+
+    # 路由规则库 (失败仅告警, 不阻断安装)
+    curl -fL --retry 5 --max-time 60 -o "$INSTALL_DIR/bin/geoip.dat"   "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat"   || warn "geoip.dat 下载失败"
+    curl -fL --retry 5 --max-time 60 -o "$INSTALL_DIR/bin/geosite.dat" "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat" || warn "geosite.dat 下载失败"
+    log "Xray-core (${panel_name}) 已安装到 $INSTALL_DIR/bin/"
+}
+
 # ---------- 安装程序文件 + 默认中文 ----------
 install_program_files() {
     is_zh && step 4 6 "安装程序文件 (默认中文)" || step 4 6 "Installing program files (default zh_CN)"
     mkdir -p "$INSTALL_DIR" "$DATA_DIR" "$LANG_DIR"
     # 默认中文; 若用户选了英文则用英文
     echo "$X_LANG" > "$LANG_FILE"
+
+    # 安装 x-ui 命令行管理脚本 (ssh 中可直接用 x-ui 命令: start/stop/restart/status/user...)
+    local xui_bin="/usr/local/bin/x-ui"
+    if [[ -f "$SRC_DIR/x-ui.sh" ]]; then
+        cp "$SRC_DIR/x-ui.sh" "$xui_bin"
+    else
+        curl -fsSL "${REPO_RAW}/x-ui.sh" -o "$xui_bin" 2>/dev/null || true
+    fi
+    [[ -f "$xui_bin" ]] && chmod +x "$xui_bin"
 }
 
 # ---------- 初始化面板账号 ----------
@@ -230,8 +291,8 @@ RestartSec=5s
 WantedBy=multi-user.target
 EOF
     systemctl daemon-reload
-    systemctl enable x-ui
-    systemctl restart x-ui || systemctl start x-ui
+    systemctl enable x-ui || true
+    systemctl restart x-ui 2>/dev/null || systemctl start x-ui 2>/dev/null || true
     sleep 3
     systemctl is-active x-ui >/dev/null 2>&1 && log "x-ui active" || warn "x-ui 未 active, 请检查日志"
 }
@@ -243,15 +304,18 @@ setup_warp() {
         return
     fi
     is_zh && log "配置 Cloudflare WARP (wg-warp 专供 VPNGate 130.158.75.0/24)..." || log "Setting up Cloudflare WARP (wg-warp for VPNGate 130.158.75.0/24)..."
+    # WARP 注册强依赖外网, 失败时不应中断整个安装 (面板登录信息仍需正常输出)
+    set +e
     export DEBIAN_FRONTEND=noninteractive
-    apt-get install -y -qq wireguard-tools 2>/dev/null || true
-    modprobe wireguard || true
+    apt-get install -y -qq wireguard-tools 2>/dev/null
+    modprobe wireguard 2>/dev/null
     if [[ ! -x /usr/local/bin/wgcf ]]; then
-        curl -sL -o /usr/local/bin/wgcf "https://github.com/ViRb3/wgcf/releases/download/v2.2.32/wgcf_2.2.32_linux_amd64" && chmod +x /usr/local/bin/wgcf
+        curl -fsSL -o /usr/local/bin/wgcf "https://github.com/ViRb3/wgcf/releases/download/v2.2.32/wgcf_2.2.32_linux_amd64" 2>/dev/null && chmod +x /usr/local/bin/wgcf
     fi
     mkdir -p /etc/wireguard && cd /etc/wireguard
-    [[ -f wgcf-account.toml ]] || wgcf register --accept-tos
-    wgcf generate
+    [[ -f wgcf-account.toml ]] || wgcf register --accept-tos 2>/dev/null
+    wgcf generate 2>/dev/null
+    if [[ -f wgcf-profile.conf ]]; then
     python3 - <<'PY'
 import re, sys
 try:
@@ -279,11 +343,13 @@ PersistentKeepalive = 25
 open("/etc/wireguard/wg-warp.conf", "w").write(conf)
 print("wg-warp.conf written, src_ip=", src_ip)
 PY
-    wg-quick down wg-warp 2>/dev/null || true
-    wg-quick up wg-warp
-    systemctl enable wg-quick@wg-warp 2>/dev/null || true
+    fi
+    wg-quick down wg-warp 2>/dev/null
+    wg-quick up wg-warp 2>/dev/null
+    systemctl enable wg-quick@wg-warp 2>/dev/null
     sleep 2
     ip route get 130.158.75.44 >/dev/null 2>&1 && log "VPNGate 路由经 wg-warp OK" || warn "VPNGate 路由未命中, 请检查"
+    set -e
 }
 
 # ---------- BBR v3 Max 内核 ----------
@@ -311,7 +377,7 @@ setup_bbr() {
     rm -f /tmp/linux-*.deb
     for U in $ASSETS; do wget -q "$U" -P /tmp/ || warn "下载失败: $U"; done
     if ! ls /tmp/linux-*.deb >/dev/null 2>&1; then warn "无可用 deb, 跳过 BBR"; return; fi
-    dpkg -i /tmp/linux-*.deb && update-grub
+    dpkg -i /tmp/linux-*.deb && update-grub || warn "BBR 内核安装失败, 继续 (BBR 将不生效)"
     rm -f /tmp/linux-*.deb
     NEED_REBOOT=1
     is_zh && log "BBR 内核已装, 稍后重启生效" || log "BBR kernel installed, reboot to activate"
@@ -351,6 +417,7 @@ install_runtime_deps
 is_zh && step 2 6 "获取源码" || step 2 6 "Fetching source"
 get_src_dir
 build_panel
+install_xray || true
 install_program_files
 init_panel_settings
 install_service
