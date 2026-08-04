@@ -1678,6 +1678,40 @@ install_x-ui() {
 └───────────────────────────────────────────────────────┘"
 }
 
+# ---------- 完整卸载 (bash install.sh uninstall) ----------
+do_uninstall() {
+    echo -e "${green}CatVPN:${plain} starting uninstall..."
+    systemctl stop x-ui 2>/dev/null
+    systemctl disable x-ui 2>/dev/null
+    rm -f ${xui_service}/x-ui.service
+    systemctl daemon-reload 2>/dev/null
+
+    wg-quick down wg-warp 2>/dev/null
+    systemctl disable wg-quick@wg-warp 2>/dev/null
+    rm -f /etc/wireguard/wg-warp.conf /etc/wireguard/wgcf-account.toml /etc/wireguard/wgcf-profile.conf
+    rm -f /usr/local/bin/wgcf
+
+    rm -rf ${xui_folder}
+    rm -f /usr/bin/x-ui
+    echo -e "${green}CatVPN:${plain} uninstalled. Re-run the installer to redeploy."
+}
+
+# ---------- 子命令分发 (必须在主流程之前) ----------
+case "${1:-}" in
+    uninstall|un|remove)
+        do_uninstall
+        exit 0
+        ;;
+    -h|--help|help)
+        echo "CatVPN 安装 / 管理脚本"
+        echo "用法: bash install.sh [uninstall|-h]"
+        echo "  (无参数)    安装 / 更新"
+        echo "  uninstall   完整卸载 (停止服务并清理文件)"
+        echo "  -h          显示本帮助"
+        exit 0
+        ;;
+esac
+
 echo -e "${green}Running...${plain}"
 install_base
 install_x-ui $1
