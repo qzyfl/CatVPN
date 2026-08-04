@@ -6,9 +6,9 @@ blue='\033[0;34m'
 yellow='\033[0;33m'
 plain='\033[0m'
 
-app_name="X-MILI"
-repo_raw_base="${X_MILI_RAW_BASE:=https://raw.githubusercontent.com/Aimilibot/X-MILI/main}"
-lang_file="${X_MILI_LANG_FILE:=/etc/x-mili/lang}"
+app_name="CatVPN"
+repo_raw_base="${CATVPN_RAW_BASE:=https://raw.githubusercontent.com/qzyfl/CatVPN/main}"
+lang_file="${CATVPN_LANG_FILE:=/etc/x-mili/lang}"
 
 load_language() {
     if [[ -z "$X_MILI_LANG" && -f "$lang_file" ]]; then
@@ -2513,7 +2513,7 @@ SSH_port_forwarding() {
 show_usage() {
     if is_zh; then
         echo -e "┌────────────────────────────────────────────────────────────────┐
-│  ${blue}X-MILI 控制菜单用法（子命令）:${plain}                              │
+│  ${blue}CatVPN 面板管理脚本（子命令）:${plain}                              │
 │                                                                │
 │  ${blue}ml${plain}                        - 管理脚本                         │
 │  ${blue}ml start${plain}                  - 启动                             │
@@ -2534,7 +2534,7 @@ show_usage() {
         return
     fi
     echo -e "┌────────────────────────────────────────────────────────────────┐
-│  ${blue}X-MILI control menu usages (subcommands):${plain}                     │
+│  ${blue}CatVPN panel management script (subcommands):${plain}                     │
 │                                                                │
 │  ${blue}ml${plain}                        - Admin Management Script           │
 │  ${blue}ml start${plain}                  - Start                             │
@@ -2559,7 +2559,7 @@ show_menu() {
     if is_zh; then
         echo -e "
 ╔────────────────────────────────────────────────╗
-│   ${green}X-MILI 面板管理脚本${plain}                         │
+│   ${green}CatVPN 面板管理脚本${plain}                         │
 │   ${green}0.${plain} 退出脚本                                 │
 │────────────────────────────────────────────────│
 │   ${green}1.${plain} 安装                                     │
@@ -2599,7 +2599,7 @@ show_menu() {
     else
     echo -e "
 ╔────────────────────────────────────────────────╗
-│   ${green}X-MILI Panel Management Script${plain}                │
+│   ${green}CatVPN Panel Management Script${plain}                │
 │   ${green}0.${plain} Exit Script                               │
 │────────────────────────────────────────────────│
 │   ${green}1.${plain} Install                                   │
