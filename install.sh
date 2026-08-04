@@ -263,6 +263,9 @@ build_panel() {
         return
     fi
 
+    # 覆盖安装时先停 x-ui 服务, 否则 cp 运行中二进制会因 Text file busy 静默失败(二进制不更新)
+    systemctl stop x-ui 2>/dev/null || true
+
     # [优先] 尝试预编译包 (GitHub Actions 构建, 快速免编译)
     if try_prebuilt; then
         return
