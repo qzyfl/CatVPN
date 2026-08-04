@@ -3378,7 +3378,7 @@ migrate_db_prompt() {
 
 show_usage() {
     echo -e "┌────────────────────────────────────────────────────────────────┐
-│  ${blue}x-ui control menu usages (subcommands):${plain}                       │
+│  ${blue}CatVPN 面板管理脚本（子命令）:${plain}                       │
 │                                                                │
 │  ${blue}x-ui${plain}                       - Admin Management Script          │
 │  ${blue}x-ui start${plain}                 - Start                            │
@@ -3405,7 +3405,7 @@ show_usage() {
 show_menu() {
     echo -e "
 ╔────────────────────────────────────────────────╗
-│  ${green}3X-UI Panel Management Script${plain}                │
+│  ${green}CatVPN 面板管理脚本${plain}                          │
 │  ${green}0.${plain} Exit Script                               │
 │────────────────────────────────────────────────│
 │  ${green}1.${plain} Install                                   │
