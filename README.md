@@ -51,6 +51,15 @@ CatVPN 是 [X-MILI](https://github.com/Aimilibot/X-MILI) 的衍生修改版，�
 - 面板初始账号密码为随机生成，请登录后及时修改。
 - 编译需要 Go 与 `CGO_ENABLED=1`（sqlite），小内存机器由脚本自动处理 swap。
 
+## 版本与性能优化
+
+- **版本号**：面板内显示版本即本仓库版本（当前 `1.2.0`，见 `config/version`），独立于上游 3X-UI（上游基础为 **3X-UI v2.9.4**）。完整迭代见 [CHANGELOG.md](./CHANGELOG.md)。
+- **面板打开速度**：
+  - 静态资源已启用 **Gzip 压缩** + **1 年强缓存**（`Cache-Control: max-age=31536000`），首次加载后重复打开近乎瞬时；
+  - 已删除生产环境 sourcemap（约 4.4MB 死重），缩小二进制与预编译包；
+  - HTML 头部对 `antd / vue` 关键资源加了 `<link rel="preload">` 提前并行加载。
+- **关于 3X-UI v3.6.0**：v3.6.0 属 3X-UI **v3 大版本**（破坏性重写），与当前 v2.9.4 base 跨大版本不兼容，无法安全 cherry-pick；如需引入其前端/后端新特性，需做完整的 v2→v3 rebase（独立大工程，列为后续路线）。
+
 ## 开源协议
 
 本项目基于 GPLv3。详见 [LICENSE](./LICENSE)。CatVPN 的全部修改均在 X-MILI 的 GPLv3 授权范围内进行。
