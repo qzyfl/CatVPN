@@ -226,11 +226,16 @@ try_prebuilt() {
     local arch url pkg tmp_dir
     arch=$(detect_arch)
     local goarch="linux-${arch}"
-    url="${REPO}/releases/latest/download/x-mili-${goarch}.tar.gz"
+    local primary="${REPO}/releases/download/latest/x-mili-${goarch}.tar.gz"
+    local fallback="${REPO}/releases/latest/download/x-mili-${goarch}.tar.gz"
     tmp_dir=$(mktemp -d -t catvpn-prebuilt.XXXXXX)
 
     is_zh && log "尝试下载预编译包 (${goarch})..." || log "Trying prebuilt bundle (${goarch})..."
-    if curl -fL --max-time 120 "$url" -o "$tmp_dir/pkg.tar.gz" 2>/dev/null; then
+    local ok=0
+    for url in "$primary" "$fallback"; do
+        if curl -fL --max-time 120 "$url" -o "$tmp_dir/pkg.tar.gz" 2>/dev/null; then ok=1; break; fi
+    done
+    if [[ "$ok" == "1" ]]; then
         if tar -xzf "$tmp_dir/pkg.tar.gz" -C "$tmp_dir" 2>/dev/null; then
             if [[ -x "$tmp_dir/x-ui" ]]; then
                 mkdir -p "$INSTALL_DIR"
