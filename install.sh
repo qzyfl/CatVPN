@@ -244,8 +244,13 @@ try_prebuilt() {
         if tar -xzf "$tmp_dir/pkg.tar.gz" -C "$tmp_dir" 2>/dev/null; then
             if [[ -x "$tmp_dir/x-ui" ]]; then
                 mkdir -p "$INSTALL_DIR"
+                # 运行中二进制不能直接 cp 覆盖(ETXTBSY/Text file busy): 先 rename 旧文件, 新 cp 用新 inode 不冲突
+                if [[ -e "$INSTALL_DIR/x-ui" ]]; then
+                    mv -f "$INSTALL_DIR/x-ui" "$INSTALL_DIR/x-ui.old" 2>/dev/null || true
+                fi
                 cp "$tmp_dir/x-ui" "$INSTALL_DIR/x-ui"
                 chmod +x "$INSTALL_DIR/x-ui"
+                rm -f "$INSTALL_DIR/x-ui.old"
                 rm -rf "$tmp_dir"
                 is_zh && log "已使用预编译包, 大小 $(stat -c%s "$INSTALL_DIR/x-ui") 字节" || log "Preinstalled, size $(stat -c%s "$INSTALL_DIR/x-ui") bytes"
                 return 0
