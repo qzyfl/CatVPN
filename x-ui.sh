@@ -296,6 +296,15 @@ uninstall() {
     rm ${xui_folder}/ -rf
     rm -f "$db_env_file"
 
+    # CatVPN 专属清理: Cloudflare WARP 出口 (wg-warp, 仅供 VPNGate 130.158.75.0/24) + 语言文件 + VPNGate 临时文件
+    systemctl stop wg-quick@wg-warp 2>/dev/null || true
+    wg-quick down wg-warp 2>/dev/null || true
+    ip link del wg-warp 2>/dev/null || true
+    systemctl disable wg-quick@wg-warp 2>/dev/null || true
+    rm -f /etc/wireguard/wg-warp.conf /etc/wireguard/wgcf-account.toml /etc/wireguard/wgcf-profile.conf
+    rm -f /usr/local/bin/wgcf
+    rm -rf /etc/x-mili /tmp/vpngate-check-*.ovpn /tmp/catvpn-src
+
     if [[ "$panel_used_postgres" == "true" ]] && postgresql_installed; then
         purge_postgresql
     fi
