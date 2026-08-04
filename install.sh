@@ -5,6 +5,12 @@
 #   一键:  bash <(curl -sL https://raw.githubusercontent.com/qzyfl/CatVPN/main/install.sh)
 #   本地:  git clone https://github.com/qzyfl/CatVPN && cd CatVPN && bash install.sh
 #   重装:  FORCE=1 bash install.sh
+#   卸载:  bash install.sh uninstall   (停止服务并清理所有 CatVPN 文件)
+#
+# 子命令:
+#   (无参数)    安装 / 更新
+#   uninstall   完整卸载 (停止 x-ui 服务 / 移除 wg-warp / 删除程序与数据)
+#   -h|--help   显示用法
 #
 # 功能:
 #   1. 现场编译本仓库定制的 x-ui (猫 Logo / 中文 / 无 GitHub·Telegram·产品推荐 推广)
@@ -31,6 +37,54 @@ warn() { echo -e "${yellow}[CatVPN]${plain} $*"; }
 fail() { echo -e "${red}[CatVPN]${plain} $*" >&2; exit 1; }
 step() { echo -e "${green}[CatVPN]${plain} ${yellow}[$1/$2]${plain} $3"; }
 
+# ---------- 用法提示 ----------
+show_usage() {
+    echo "CatVPN 安装 / 管理脚本"
+    echo "用法:"
+    echo "  bash install.sh            # 安装 / 更新"
+    echo "  bash install.sh uninstall  # 完整卸载 (停止服务并清理文件)"
+    echo "  FORCE=1 bash install.sh    # 强制重装"
+    echo "  bash install.sh -h         # 显示本帮助"
+}
+
+# ---------- 完整卸载 ----------
+do_uninstall() {
+    is_zh && echo -e "${green}[CatVPN]${plain} 开始卸载..." || echo -e "${green}[CatVPN]${plain} Uninstalling..."
+    # 卸载过程允许部分步骤失败, 不因某条命令非零退出而中断
+    set +e
+    # 1. 停止并禁用面板服务
+    systemctl stop x-ui 2>/dev/null
+    systemctl disable x-ui 2>/dev/null
+    rm -f /etc/systemd/system/x-ui.service
+    systemctl daemon-reload 2>/dev/null
+
+    # 2. 停止并移除 WARP 出口 (专供 VPNGate 的 wg-warp)
+    wg-quick down wg-warp 2>/dev/null
+    systemctl disable wg-quick@wg-warp 2>/dev/null
+    rm -f /etc/wireguard/wg-warp.conf /etc/wireguard/wgcf-account.toml /etc/wireguard/wgcf-profile.conf
+    rm -f /usr/local/bin/wgcf
+
+    # 3. 移除 BBR sysctl 配置
+    rm -f /etc/sysctl.d/99-catvpn.conf
+    sysctl --system >/dev/null 2>&1
+
+    # 4. 删除程序与数据文件
+    rm -rf "$INSTALL_DIR"       # /usr/local/x-ui (含 bin/xray 内核)
+    rm -f /usr/local/bin/x-ui   # x-ui 命令行管理脚本 (ssh 中可用)
+    rm -rf "$DATA_DIR"          # /etc/x-ui (面板配置 + 账号)
+    rm -rf "$LANG_DIR"          # /etc/x-mili (语言文件)
+
+    # 5. 清理安装时创建的小内存 4G swap
+    if [[ -f /swapfile ]]; then
+        swapoff /swapfile 2>/dev/null
+        rm -f /swapfile
+    fi
+    set -e
+
+    is_zh && echo -e "${green}[CatVPN]${plain} 卸载完成。重新运行安装脚本即可再次部署。" \
+          || echo -e "${green}[CatVPN]${plain} Uninstalled. Re-run the installer to redeploy."
+}
+
 [[ $EUID -ne 0 ]] && fail "请使用 root 运行 / Please run as root"
 
 # ---------- 语言 ----------
@@ -49,6 +103,18 @@ choose_language
 is_zh && log "开始安装/更新 ${APP_NAME}" || log "Installing/updating ${APP_NAME}"
 
 command -v systemctl >/dev/null 2>&1 || fail "需要 systemd / systemd is required"
+
+# ---------- 子命令分发 (必须在主流程之前) ----------
+case "${1:-}" in
+    uninstall|un|remove)
+        do_uninstall
+        exit 0
+        ;;
+    -h|--help|help)
+        show_usage
+        exit 0
+        ;;
+esac
 
 # ---------- 运行依赖 ----------
 install_runtime_deps() {
