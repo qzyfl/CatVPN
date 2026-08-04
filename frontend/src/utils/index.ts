@@ -877,6 +877,7 @@ export class LanguageManager {
         ['ar', LanguageManager.supportedLanguages[0].value],
         ['fa', LanguageManager.supportedLanguages[2].value],
         ['ja', LanguageManager.supportedLanguages[5].value],
+        ['zh', LanguageManager.supportedLanguages[3].value],
         ['ru', LanguageManager.supportedLanguages[6].value],
         ['vi', LanguageManager.supportedLanguages[7].value],
         ['es', LanguageManager.supportedLanguages[8].value],
@@ -895,11 +896,11 @@ export class LanguageManager {
       if (LanguageManager.isSupportLanguage(lang)) {
         CookieManager.setCookie('lang', lang, 365);
       } else {
-        CookieManager.setCookie('lang', 'en-US', 365);
+        CookieManager.setCookie('lang', 'zh-CN', 365);
         window.location.reload();
       }
     } else {
-      CookieManager.setCookie('lang', 'en-US', 365);
+      CookieManager.setCookie('lang', 'zh-CN', 365);
       window.location.reload();
     }
 

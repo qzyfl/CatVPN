@@ -39,9 +39,8 @@ import { pauseAnimationsUntilLeave, useTheme } from '@/hooks/useTheme';
 import { useAllSettings } from '@/api/queries/useAllSettings';
 import './AppSidebar.css';
 
-const DONATE_URL = 'https://donate.sanaei.dev/';
-const DOCS_URL = 'https://docs.sanaei.dev/';
-const REPO_URL = 'https://github.com/MHSanaei/3x-ui';
+const DOCS_URL = 'https://github.com/qzyfl/CatVPN#readme';
+const REPO_URL = 'https://github.com/qzyfl/CatVPN';
 const LOGOUT_KEY = '__logout__';
 const RAIL_WIDTH = 72;
 const railStyle = { '--sider-rail': `${RAIL_WIDTH}px` } as CSSProperties;
@@ -64,21 +63,6 @@ const iconByName: Record<IconName, ComponentType> = {
   outbound: ExportOutlined,
   routing: SwapOutlined,
 };
-
-function DonateButton({ ariaLabel }: { ariaLabel: string }) {
-  return (
-    <a
-      href={DONATE_URL}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="sidebar-donate"
-      aria-label={ariaLabel}
-      title={ariaLabel}
-    >
-      <HeartOutlined />
-    </a>
-  );
-}
 
 function DocsButton({ ariaLabel }: { ariaLabel: string }) {
   return (
@@ -274,12 +258,11 @@ export default function AppSidebar() {
       >
         <div className="sider-brand">
           <div className="brand-block">
-            <span className="brand-text">{railCollapsed ? '3X' : '3X-UI'}</span>
+            <span className="brand-text">{railCollapsed ? 'Cat' : 'CatVPN'}</span>
           </div>
           {!railCollapsed && (
             <div className="brand-actions">
               <DocsButton ariaLabel={t('menu.docs') || 'Documentation'} />
-              <DonateButton ariaLabel={t('menu.donate') || 'Donate'} />
               <ThemeCycleButton
                 id="theme-cycle"
                 isDark={isDark}
@@ -328,11 +311,10 @@ export default function AppSidebar() {
       >
         <div className="drawer-header">
           <div className="brand-block">
-            <span className="drawer-brand">3X-UI</span>
+            <span className="drawer-brand">CatVPN</span>
           </div>
           <div className="drawer-header-actions">
             <DocsButton ariaLabel={t('menu.docs') || 'Documentation'} />
-            <DonateButton ariaLabel={t('menu.donate') || 'Donate'} />
             <ThemeCycleButton
               id="theme-cycle-drawer"
               isDark={isDark}
