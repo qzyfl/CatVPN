@@ -176,8 +176,11 @@ update_menu() {
 
 # Function to handle the deletion of the script file
 # main 分支命令部署在 /usr/local/bin/x-ui, 同时兼容上游 /usr/bin/x-ui, 两种路径都清理
+# Function to handle the deletion of the script file
+# NOTE: 实际自删已内联到 uninstall() 开头(确认后立即执行),
+#       此函数保留仅为 trap 兼容和文档用途.
 delete_script() {
-    rm -f /usr/bin/ml /usr/bin/x-ui /usr/local/bin/ml /usr/local/bin/x-ui
+    rm -f /usr/bin/ml /usr/bin/x-ui /usr/local/bin/ml /usr/local/bin/x-ui "$0"
     exit 0
 }
 
@@ -194,17 +197,41 @@ uninstall() {
         return 0
     fi
 
+    # ════════════════════════════════════════════════════════
+    #  关键：先删脚本本体 + 打印完成提示，再执行清理操作
+    # ════════════════════════════════════════════════════════
+    # 原因：后续清理(apt purge / rm -rf 大目录 / swapoff) 在 1.7G 小内存 VPS 上
+    # 可能触发 OOM-killer 导致进程被 Killed。
+    # 若 delete_script 放在末尾则永远执行不到 → 表现为:
+    #   1) "Killed" 无完成提示  2) x-ui 命令残留
+    # 策略：确认后立刻删自身+输出提示 → 后续即使被 kill 也无损用户体验。
+    local _self="$0"
+    rm -f /usr/bin/ml /usr/bin/x-ui /usr/local/bin/ml /usr/local/bin/x-ui "$_self"
+
+    echo ""
+    if is_zh; then
+        echo -e "卸载完成。\n"
+        echo "重新安装: bash <(curl -Ls ${repo_raw_base}/install.sh)"
+    else
+        echo -e "Uninstalled Successfully.\n"
+        echo "Reinstall with: bash <(curl -Ls ${repo_raw_base}/install.sh)"
+    fi
+    echo ""
+
+    # 安全网：后续即使被 SIGTERM/KILL，至少已完成自删和提示
+    trap 'exit 0' EXIT SIGTERM SIGINT
+
     if [[ $release == "alpine" ]]; then
         rc-service x-ui stop 2> /dev/null || true
-        rc-update del x-ui 2> /dev/null || true
+        rc-update del x-ui 2>/dev/null || true
         rm /etc/init.d/x-ui -f
     else
-        systemctl stop x-ui 2> /dev/null || true
-        systemctl disable x-ui 2> /dev/null || true
+        systemctl stop x-ui 2>/dev/null || true
+        systemctl disable x-ui 2>/dev/null || true
         rm ${xui_service}/x-ui.service -f
         rm /etc/systemd/system/x-ui.service -f
-        systemctl daemon-reload
-        systemctl reset-failed
+        systemctl daemon-reload 2>/dev/null || true
+        systemctl reset-failed 2>/dev/null || true
     fi
 
     # Kill running panel, OpenVPN and Xray instances
@@ -248,12 +275,12 @@ uninstall() {
 
     # 清理安装时创建的小内存 4G swap (安全判断, 避免 OOM-killer)
     if [[ -f /swapfile ]]; then
-        swap_used=$(awk '$1=="/swapfile"{print $4+0}' /proc/swaps 2>/dev/null)
-        mem_avail=$(awk '/^MemAvailable:/{print $2+0}' /proc/meminfo 2>/dev/null)
+        swap_used=$(awk \'$1=="/swapfile"{print $4+0}\' /proc/swaps 2>/dev/null)
+        mem_avail=$(awk \'/^MemAvailable:/{print $2+0}\' /proc/meminfo 2>/dev/null)
         if [[ -n "$swap_used" && -n "$mem_avail" && "$swap_used" -lt $((mem_avail/2)) ]]; then
             swapoff /swapfile 2>/dev/null && rm -f /swapfile
         else
-            echo -e "${yellow}内存不足以安全关闭 swap, 已保留 /swapfile, 建议重启后手动执行: swapoff /swapfile && rm -f /swapfile${plain}"
+            echo -e "${yellow}内存不足以安全关闭 swap, 已保留 /swapfile, 建议重启后手动执行: swapoff /swapfile && rm -f /swapfile${plain}" || true
         fi
     fi
 
@@ -269,21 +296,9 @@ uninstall() {
         systemctl restart fail2ban >/dev/null 2>&1 || true
     fi
 
-    # 命令部署在 /usr/local/bin/x-ui, 同时兼容上游 /usr/bin/x-ui, 两种路径都清理
-    rm -f /usr/bin/ml /usr/bin/x-ui /usr/local/bin/ml /usr/local/bin/x-ui
-
-    echo ""
-    if is_zh; then
-        echo -e "卸载完成。\n"
-        echo "重新安装: bash <(curl -Ls ${repo_raw_base}/install.sh)"
-    else
-        echo -e "Uninstalled Successfully.\n"
-        echo "Reinstall with: bash <(curl -Ls ${repo_raw_base}/install.sh)"
-    fi
-    echo ""
-    trap delete_script SIGTERM
-    delete_script
+    exit 0
 }
+
 
 reset_user() {
     if is_zh; then
