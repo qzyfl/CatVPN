@@ -425,7 +425,7 @@ setup_warp() {
     tos=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
     host_name=$(hostname)
     reg_body=$(printf '{"key":"%s","tos":"%s","type":"PC","model":"x-ui","name":"%s"}' "$pub_key" "$tos" "$host_name")
-    http_code=$(curl -s -o /tmp/catvpn-warp-reg.json -w '%{http_code}' \
+    http_code=$(curl -s --connect-timeout 10 --max-time 30 -o /tmp/catvpn-warp-reg.json -w '%{http_code}' \
         -H "CF-Client-Version: a-7.21-0721" -H "Content-Type: application/json" \
         -d "$reg_body" "https://api.cloudflareclient.com/v0a4005/reg")
     if [[ "$http_code" != "200" || ! -s /tmp/catvpn-warp-reg.json ]]; then
@@ -477,6 +477,8 @@ PersistentKeepalive = 25
 """ % (priv, address, src_ip, src_ip, peer_pub, endpoint)
     open("/etc/wireguard/wg-warp.conf", "w").write(conf)
     print("wg-warp.conf written via native API, src_ip=", src_ip)
+except Exception as e:
+    print("[ERROR] WARP config parse failed:", e, file=sys.stderr); sys.exit(1)
 PY
     if [[ -f /etc/wireguard/wg-warp.conf ]]; then
         wg-quick down wg-warp 2>/dev/null
