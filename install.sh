@@ -92,10 +92,15 @@ do_uninstall() {
 choose_language() {
     [[ -f "$LANG_FILE" ]] && X_LANG=$(cat "$LANG_FILE")
     if [[ -z "$X_LANG" ]]; then
-        echo -e "${green}1.${plain} 简体中文"
-        echo -e "${green}2.${plain} English"
-        read -rp "请选择语言 / Please choose language [1-2]: " choice
-        [[ "$choice" == "2" ]] && X_LANG="en_US" || X_LANG="zh_CN"
+        # 无人值守环境 (curl|bash / 无 TTY / 显式 NONINTERACTIVE): 自动默认中文, 不阻塞安装
+        if [[ ! -t 0 ]] || [[ "${CATVPN_NONINTERACTIVE:-0}" == "1" ]]; then
+            X_LANG="${CATVPN_LANG:-zh_CN}"
+        else
+            echo -e "${green}1.${plain} 简体中文"
+            echo -e "${green}2.${plain} English"
+            read -rp "请选择语言 / Please choose language [1-2]: " choice
+            [[ "$choice" == "2" ]] && X_LANG="en_US" || X_LANG="zh_CN"
+        fi
         mkdir -p "$LANG_DIR"; echo "$X_LANG" > "$LANG_FILE"
     fi
 }
