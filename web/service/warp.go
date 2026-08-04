@@ -80,7 +80,7 @@ func (s *WarpService) GetWarpConfig() (string, error) {
 		return "", err
 	}
 
-	url := fmt.Sprintf("https://api.cloudflareclient.com/v0a2158/reg/%s", warpData["device_id"])
+	url := fmt.Sprintf("https://api.cloudflareclient.com/v0a4005/reg/%s", warpData["device_id"])
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -113,7 +113,7 @@ func (s *WarpService) registerWarp(secretKey string, publicKey string, save bool
 	hostName, _ := os.Hostname()
 	data := fmt.Sprintf(`{"key":"%s","tos":"%s","type": "PC","model": "x-ui", "name": "%s"}`, publicKey, tos, hostName)
 
-	url := "https://api.cloudflareclient.com/v0a2158/reg"
+	url := "https://api.cloudflareclient.com/v0a4005/reg"
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer([]byte(data)))
 	if err != nil {
@@ -197,7 +197,7 @@ func (s *WarpService) SetWarpLicense(license string) (string, error) {
 		return "", err
 	}
 
-	url := fmt.Sprintf("https://api.cloudflareclient.com/v0a2158/reg/%s/account", warpData["device_id"])
+	url := fmt.Sprintf("https://api.cloudflareclient.com/v0a4005/reg/%s/account", warpData["device_id"])
 	data := fmt.Sprintf(`{"license": "%s"}`, license)
 
 	req, err := http.NewRequest("PUT", url, bytes.NewBuffer([]byte(data)))
