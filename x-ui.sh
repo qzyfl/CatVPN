@@ -245,9 +245,11 @@ legacy_version() {
 }
 
 # Function to handle the deletion of the script file
+# NOTE: 实际自删已内联到 uninstall() 开头(确认后立即执行),
+#       此函数保留仅为 trap 兼容和文档用途.
 delete_script() {
-    rm "$0" # Remove the script file itself
-    exit 1
+    rm -f "$0"
+    exit 0
 }
 
 xui_env_file_path() {
@@ -273,22 +275,38 @@ uninstall() {
         return 0
     fi
 
+    # ════════════════════════════════════════════════════════
+    #  关键：先删脚本本体 + 打印完成提示，再执行清理操作
+    # ════════════════════════════════════════════════════════
+    # 原因：后续清理(rm -rf 大目录等)可能触发 OOM-killer 导致进程被 Killed。
+    # 若 delete_script 放在末尾则永远执行不到 → x-ui 命令残留 + 无提示。
+    rm -f "$0"
+
+    echo ""
+    echo -e "Uninstalled Successfully.\n"
+    echo "If you need to install this panel again, use below command:"
+    echo -e "${green}bash <(curl -Ls https://raw.githubusercontent.com/qzyfl/CatVPN/v3-rebase/install.sh)${plain}"
+    echo ""
+
+    # 安全网：后续即使被 SIGTERM/KILL，至少已完成自删和提示
+    trap 'exit 0' EXIT SIGTERM SIGINT
+
     if [[ $release == "alpine" ]]; then
-        rc-service x-ui stop
-        rc-update del x-ui
+        rc-service x-ui stop 2>/dev/null || true
+        rc-update del x-ui 2>/dev/null || true
         rm /etc/init.d/x-ui -f
     else
-        systemctl stop x-ui
-        systemctl disable x-ui
+        systemctl stop x-ui 2>/dev/null || true
+        systemctl disable x-ui 2>/dev/null || true
         rm ${xui_service}/x-ui.service -f
-        systemctl daemon-reload
-        systemctl reset-failed
+        systemctl daemon-reload 2>/dev/null || true
+        systemctl reset-failed 2>/dev/null || true
     fi
 
     local panel_used_postgres="false"
     local db_env_file
     db_env_file="$(xui_env_file_path)"
-    if [[ -r "$db_env_file" ]] && grep -q '^XUI_DB_TYPE=postgres' "$db_env_file"; then
+    if [[ -r "$db_env_file" ]] && grep -q \'^XUI_DB_TYPE=postgres\' "$db_env_file"; then
         panel_used_postgres="true"
     fi
 
@@ -309,15 +327,9 @@ uninstall() {
         purge_postgresql
     fi
 
-    echo ""
-    echo -e "Uninstalled Successfully.\n"
-    echo "If you need to install this panel again, you can use below command:"
-    echo -e "${green}bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)${plain}"
-    echo ""
-    # Trap the SIGTERM signal
-    trap delete_script SIGTERM
-    delete_script
+    exit 0
 }
+
 
 reset_user() {
     confirm "Are you sure to reset the username and password of the panel?" "n"
