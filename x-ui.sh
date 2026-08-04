@@ -270,8 +270,8 @@ uninstall() {
     wg-quick down wg-warp 2>/dev/null || true
     ip link del wg-warp 2>/dev/null || true
     systemctl disable wg-quick@wg-warp 2>/dev/null || true
-    rm -f /etc/wireguard/wg-warp.conf /etc/wireguard/wgcf-account.toml /etc/wireguard/wgcf-profile.conf
-    rm -f /usr/local/bin/wgcf
+    rm -f /etc/wireguard/wg-warp.conf /etc/wireguard/catvpn-warp-priv.key /etc/wireguard/wgcf-account.toml /etc/wireguard/wgcf-profile.conf
+    rm -f /usr/local/bin/wgcf /tmp/catvpn-warp-reg.json
 
     # 清理安装时创建的小内存 4G swap (安全判断, 避免 OOM-killer)
     if [[ -f /swapfile ]]; then

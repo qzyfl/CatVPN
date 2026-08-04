@@ -65,8 +65,8 @@ do_uninstall() {
     wg-quick down wg-warp 2>/dev/null
     ip link del wg-warp 2>/dev/null
     systemctl disable wg-quick@wg-warp 2>/dev/null
-    rm -f /etc/wireguard/wg-warp.conf /etc/wireguard/wgcf-account.toml /etc/wireguard/wgcf-profile.conf
-    rm -f /usr/local/bin/wgcf
+    rm -f /etc/wireguard/wg-warp.conf /etc/wireguard/catvpn-warp-priv.key /etc/wireguard/wgcf-account.toml /etc/wireguard/wgcf-profile.conf
+    rm -f /usr/local/bin/wgcf /tmp/catvpn-warp-reg.json
 
     # 3. 移除 BBR sysctl 配置
     rm -f /etc/sysctl.d/99-catvpn.conf
@@ -399,31 +399,70 @@ setup_warp() {
         is_zh && log "wg-warp 已存在且活跃, 跳过" || log "wg-warp already up, skip"
         return
     fi
-    is_zh && log "配置 Cloudflare WARP (wg-warp 专供 VPNGate 130.158.75.0/24)..." || log "Setting up Cloudflare WARP (wg-warp for VPNGate 130.158.75.0/24)..."
+    is_zh && log "配置 Cloudflare WARP (原生 API v0a4005, 专供 VPNGate 130.158.75.0/24)..." || log "Setting up Cloudflare WARP (native API v0a4005, for VPNGate 130.158.75.0/24)..."
     # WARP 注册强依赖外网, 失败时不应中断整个安装 (面板登录信息仍需正常输出)
     set +e
     export DEBIAN_FRONTEND=noninteractive
     apt-get install -y -qq wireguard-tools 2>/dev/null
     modprobe wireguard 2>/dev/null
-    if [[ ! -x /usr/local/bin/wgcf ]]; then
-        curl -fsSL -o /usr/local/bin/wgcf "https://github.com/ViRb3/wgcf/releases/download/v2.2.32/wgcf_2.2.32_linux_amd64" 2>/dev/null && chmod +x /usr/local/bin/wgcf
-    fi
     mkdir -p /etc/wireguard && cd /etc/wireguard
-    [[ -f wgcf-account.toml ]] || wgcf register --accept-tos 2>/dev/null
-    wgcf generate 2>/dev/null
-    if [[ -f wgcf-profile.conf ]]; then
+    # 原生生成 WireGuard 密钥 (不再依赖 wgcf 二进制)
+    if [[ ! -s catvpn-warp-priv.key ]]; then
+        wg genkey > catvpn-warp-priv.key 2>/dev/null
+        chmod 600 catvpn-warp-priv.key
+    fi
+    if [[ ! -s catvpn-warp-priv.key ]]; then
+        warn "生成 WARP 密钥失败 (wg 不可用?), 跳过 wg-warp"
+        set -e; return
+    fi
+    priv_key=$(cat catvpn-warp-priv.key)
+    pub_key=$(echo "$priv_key" | wg pubkey 2>/dev/null)
+    if [[ -z "$pub_key" ]]; then
+        warn "生成 WARP 公钥失败, 跳过 wg-warp"
+        set -e; return
+    fi
+    # 通过 Cloudflare 原生客户端 API (v0a4005) 注册, 直接拿到 WireGuard 配置
+    tos=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+    host_name=$(hostname)
+    reg_body=$(printf '{"key":"%s","tos":"%s","type":"PC","model":"x-ui","name":"%s"}' "$pub_key" "$tos" "$host_name")
+    http_code=$(curl -s -o /tmp/catvpn-warp-reg.json -w '%{http_code}' \
+        -H "CF-Client-Version: a-7.21-0721" -H "Content-Type: application/json" \
+        -d "$reg_body" "https://api.cloudflareclient.com/v0a4005/reg")
+    if [[ "$http_code" != "200" || ! -s /tmp/catvpn-warp-reg.json ]]; then
+        warn "WARP 原生注册失败 (HTTP $http_code), 跳过 wg-warp (VPNGate 出口将不可用)"
+        set -e; return
+    fi
     python3 - <<'PY'
-import re, sys
+import json, sys
 try:
-    src = open("wgcf-profile.conf").read()
-    pk = re.search(r"PrivateKey = (\S+)", src).group(1)
-    addr = re.search(r"Address = (\S+)", src).group(1).split(",")[0]
-    peer = re.search(r"PublicKey = (\S+)", src).group(1)
-    ep = re.search(r"Endpoint = (\S+)", src).group(1)
-    src_ip = addr.split("/")[0]
-except AttributeError as e:
-    print("[ERROR] wgcf-profile.conf parse failed:", e, file=sys.stderr); sys.exit(1)
-conf = """[Interface]
+    rsp = json.load(open("/tmp/catvpn-warp-reg.json"))
+    cfg = rsp["config"]
+    iface = cfg["interface"]
+    addrs = iface["addresses"]
+    v4 = addrs.get("v4", "")
+    v6 = addrs.get("v6", "")
+    peers = cfg.get("peers", [])
+    if not v4 or not peers:
+        print("[ERROR] WARP 配置缺少地址或 peer", file=sys.stderr); sys.exit(1)
+    peer = peers[0]
+    peer_pub = peer.get("public_key", "")
+    ep = peer.get("endpoint", {})
+    ep_host = ep.get("host", "")
+    ep_port = ep.get("port", 0)
+    if not peer_pub or not ep_host:
+        print("[ERROR] WARP peer 字段缺失", file=sys.stderr); sys.exit(1)
+    address = v4 + "/32"
+    if v6:
+        address += ", " + v6 + "/128"
+    src_ip = v4
+    if ":" in ep_host:
+        endpoint = ep_host
+    elif ep_port:
+        endpoint = "%s:%s" % (ep_host, ep_port)
+    else:
+        endpoint = "%s:2408" % ep_host
+    priv = open("/etc/wireguard/catvpn-warp-priv.key").read().strip()
+    conf = """[Interface]
 PrivateKey = %s
 Address = %s
 Table = off
@@ -435,16 +474,19 @@ PublicKey = %s
 Endpoint = %s
 AllowedIPs = 0.0.0.0/0, ::/0
 PersistentKeepalive = 25
-""" % (pk, addr, src_ip, src_ip, peer, ep)
-open("/etc/wireguard/wg-warp.conf", "w").write(conf)
-print("wg-warp.conf written, src_ip=", src_ip)
+""" % (priv, address, src_ip, src_ip, peer_pub, endpoint)
+    open("/etc/wireguard/wg-warp.conf", "w").write(conf)
+    print("wg-warp.conf written via native API, src_ip=", src_ip)
 PY
+    if [[ -f /etc/wireguard/wg-warp.conf ]]; then
+        wg-quick down wg-warp 2>/dev/null
+        wg-quick up wg-warp 2>/dev/null
+        systemctl enable wg-quick@wg-warp 2>/dev/null
+        sleep 2
+        ip route get 130.158.75.44 >/dev/null 2>&1 && log "VPNGate 路由经 wg-warp OK" || warn "VPNGate 路由未命中, 请检查"
+    else
+        warn "wg-warp.conf 未生成, VPNGate 出口不可用"
     fi
-    wg-quick down wg-warp 2>/dev/null
-    wg-quick up wg-warp 2>/dev/null
-    systemctl enable wg-quick@wg-warp 2>/dev/null
-    sleep 2
-    ip route get 130.158.75.44 >/dev/null 2>&1 && log "VPNGate 路由经 wg-warp OK" || warn "VPNGate 路由未命中, 请检查"
     set -e
 }
 
