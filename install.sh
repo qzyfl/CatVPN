@@ -59,6 +59,7 @@ do_uninstall() {
     systemctl daemon-reload 2>/dev/null
 
     # 2. 停止并移除 WARP 出口 (专供 VPNGate 的 wg-warp)
+    systemctl stop wg-quick@wg-warp 2>/dev/null
     wg-quick down wg-warp 2>/dev/null
     systemctl disable wg-quick@wg-warp 2>/dev/null
     rm -f /etc/wireguard/wg-warp.conf /etc/wireguard/wgcf-account.toml /etc/wireguard/wgcf-profile.conf
@@ -100,7 +101,6 @@ choose_language() {
 }
 is_zh() { [[ "$X_LANG" == "zh_CN" ]]; }
 choose_language
-is_zh && log "开始安装/更新 ${APP_NAME}" || log "Installing/updating ${APP_NAME}"
 
 command -v systemctl >/dev/null 2>&1 || fail "需要 systemd / systemd is required"
 
@@ -115,6 +115,9 @@ case "${1:-}" in
         exit 0
         ;;
 esac
+
+# 安装路径问候 (卸载 / 帮助已在上面提前退出, 不会打印此行)
+is_zh && log "开始安装/更新 ${APP_NAME}" || log "Installing/updating ${APP_NAME}"
 
 # ---------- 运行依赖 ----------
 install_runtime_deps() {
