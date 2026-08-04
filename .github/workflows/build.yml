@@ -1,5 +1,12 @@
 name: Build CatVPN Prebuilt Binaries
 
+# 对齐 X-MILI 的"下载预编译"模型：
+#   - 仅在 GitHub 托管的 amd64 runner 上构建 linux/amd64（CGO 启用），
+#     与上游 X-MILI 一致，保证稳定可复现。
+#   - arm64 / 其他架构由 install.sh 自动回退到源码编译（已内置）。
+#   - 推送到 main 即重新发布到 tag `latest`（非 prerelease），
+#     确保 install.sh 的 `releases/latest/download/x-mili-linux-amd64.tar.gz` 可命中。
+
 on:
   push:
     branches: [main]
@@ -12,14 +19,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - arch: amd64
-            goarch: linux-amd64
-          - arch: arm64
-            goarch: linux-arm64
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,11 +31,11 @@ jobs:
       - name: Remove stray C file
         run: rm -f pow_alps.c
 
-      - name: Build (${{ matrix.arch }})
+      - name: Build (linux/amd64, CGO)
         env:
           CGO_ENABLED: 1
           GOOS: linux
-          GOARCH: ${{ matrix.arch }}
+          GOARCH: amd64
           GOPROXY: https://goproxy.cn,direct
         run: |
           mkdir -p dist
@@ -44,34 +43,39 @@ jobs:
           chmod +x dist/x-ui
           echo "Build size: $(du -sh dist/x-ui)"
 
-      - name: Package (${{ matrix.arch }})
+      - name: Package (linux/amd64)
         run: |
           cd dist
-          tar czf "../x-mili-${{ matrix.goarch }}.tar.gz" x-ui
-          sha256sum "../x-mili-${{ matrix.goarch }}.tar.gz" > "../x-mili-${{ matrix.goarch }}.sha256"
+          tar czf "../x-mili-linux-amd64.tar.gz" x-ui
+          sha256sum "../x-mili-linux-amd64.tar.gz" > "../x-mili-linux-amd64.sha256"
+          ls -lh "../x-mili-linux-amd64.tar.gz"
 
-      - name: Upload artifact (${{ matrix.arch }})
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: prebuilt-${{ matrix.goarch }}
+          name: prebuilt-linux-amd64
           path: |
-            x-mili-${{ matrix.goarch }}.tar.gz
-            x-mili-${{ matrix.goarch }}.sha256
+            x-mili-linux-amd64.tar.gz
+            x-mili-linux-amd64.sha256
 
   release:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      - name: Download all artifacts
+      - name: Download artifact
         uses: actions/download-artifact@v4
         with:
+          name: prebuilt-linux-amd64
           path: artifacts
-          pattern: prebuilt-*
-          merge-multiple: true
 
-      - name: Create Release
+      - name: Publish / update Release (latest)
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: latest
+          name: CatVPN Prebuilt Binaries
           files: artifacts/*
-          generate_release_notes: true
+          prerelease: false
+          overwrite: true
+          body: |
+            CatVPN 预编译二进制（linux/amd64，CGO 启用）。
+            install.sh 安装时自动下载此包；arm64 等架构自动回退源码编译。
