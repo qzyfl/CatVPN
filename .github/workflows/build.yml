@@ -1,0 +1,100 @@
+name: Build CatVPN Prebuilt Binaries
+
+# CatVPN 预编译模型（基于 3x-ui v3.6.0 重写后适配）：
+#   - 仅在 GitHub 托管的 amd64 runner 上构建 linux/amd64（CGO 启用）。
+#   - v3.6.0 前端为 React19/Vite8 SPA，必须先 `npm run build` 产出
+#     internal/web/dist，Go 侧通过 //go:embed 嵌入，否则 go build 失败。
+#   - 仅 main 分支推送会重新发布到 tag `latest`（非 prerelease），
+#     确保 install.sh 的 `releases/latest/download/catvpn-linux-amd64.tar.gz` 命中；
+#     其他分支（如 v3-rebase）推送只构建并上传产物，不发布，避免污染稳定版。
+
+on:
+  push:
+    branches: [main, v3-rebase]
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'frontend/**'
+      - '.nvmrc'
+      - '**.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend bundle (Vite -> internal/web/dist)
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build backend (linux/amd64, CGO)
+        env:
+          CGO_ENABLED: 1
+          GOOS: linux
+          GOARCH: amd64
+          GOPROXY: https://goproxy.cn,direct
+        run: |
+          mkdir -p dist
+          go build -o dist/x-ui main.go
+          chmod +x dist/x-ui
+          echo "Build size: $(du -sh dist/x-ui)"
+
+      - name: Package (linux/amd64)
+        run: |
+          cd dist
+          tar czf "../catvpn-linux-amd64.tar.gz" x-ui
+          sha256sum "../catvpn-linux-amd64.tar.gz" > "../catvpn-linux-amd64.sha256"
+          ls -lh "../catvpn-linux-amd64.tar.gz"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuilt-linux-amd64
+          path: |
+            catvpn-linux-amd64.tar.gz
+            catvpn-linux-amd64.sha256
+
+  release:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: prebuilt-linux-amd64
+          path: artifacts
+
+      - name: Publish / update Release (latest)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: CatVPN Prebuilt Binaries
+          files: artifacts/*
+          prerelease: false
+          overwrite: true
+          body: |
+            CatVPN 预编译二进制（linux/amd64，CGO 启用，基于 3x-ui v3.6.0）。
+            install.sh 安装时自动下载此包；arm64 等架构自动回退源码编译。
