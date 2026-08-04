@@ -226,14 +226,19 @@ try_prebuilt() {
     local arch url pkg tmp_dir
     arch=$(detect_arch)
     local goarch="linux-${arch}"
-    local primary="${REPO}/releases/download/latest/x-mili-${goarch}.tar.gz"
-    local fallback="${REPO}/releases/latest/download/x-mili-${goarch}.tar.gz"
+    # 只认显式 latest tag 的滚动预编译包; releases/latest 按发布时间解析会跳到旧的带 tag 发布(如 v1.2.1), 绝不能回退到它
+    local url="${REPO}/releases/download/latest/x-mili-${goarch}.tar.gz"
     tmp_dir=$(mktemp -d -t catvpn-prebuilt.XXXXXX)
 
     is_zh && log "尝试下载预编译包 (${goarch})..." || log "Trying prebuilt bundle (${goarch})..."
     local ok=0
-    for url in "$primary" "$fallback"; do
-        if curl -fL --max-time 120 "$url" -o "$tmp_dir/pkg.tar.gz" 2>/dev/null; then ok=1; break; fi
+    for i in 1 2 3; do
+        if curl -fL --retry 3 --retry-delay 2 --max-time 120 "$url" -o "$tmp_dir/pkg.tar.gz" 2>/dev/null; then
+            if tar -xzf "$tmp_dir/pkg.tar.gz" -C "$tmp_dir" 2>/dev/null && [[ -x "$tmp_dir/x-ui" ]]; then
+                ok=1; break
+            fi
+        fi
+        sleep 2
     done
     if [[ "$ok" == "1" ]]; then
         if tar -xzf "$tmp_dir/pkg.tar.gz" -C "$tmp_dir" 2>/dev/null; then
