@@ -1681,19 +1681,30 @@ install_x-ui() {
 # ---------- 完整卸载 (bash install.sh uninstall) ----------
 do_uninstall() {
     echo -e "${green}CatVPN:${plain} starting uninstall..."
+    # 1. 停止面板服务 + 杀 xray 残留进程
     systemctl stop x-ui 2>/dev/null
     systemctl disable x-ui 2>/dev/null
     rm -f ${xui_service}/x-ui.service
     systemctl daemon-reload 2>/dev/null
+    pkill -f "xray-linux-" 2>/dev/null
 
+    # 2. 停止并移除 WARP 出口 (wg-warp)
     systemctl stop wg-quick@wg-warp 2>/dev/null
     wg-quick down wg-warp 2>/dev/null
+    ip link del wg-warp 2>/dev/null
     systemctl disable wg-quick@wg-warp 2>/dev/null
     rm -f /etc/wireguard/wg-warp.conf /etc/wireguard/wgcf-account.toml /etc/wireguard/wgcf-profile.conf
     rm -f /usr/local/bin/wgcf
 
+    # 3. 删除程序与数据文件
     rm -rf ${xui_folder}
     rm -f /usr/bin/x-ui
+    rm -rf /etc/x-ui /etc/x-mili
+
+    # 4. 清理 VPNGate/OpenVPN 残留
+    rm -rf /tmp/vpngate-check-*.ovpn 2>/dev/null
+    rm -rf /tmp/catvpn-src 2>/dev/null
+
     echo -e "${green}CatVPN:${plain} uninstalled. Re-run the installer to redeploy."
 }
 
