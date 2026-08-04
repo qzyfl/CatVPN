@@ -1411,8 +1411,264 @@ _install_xui_service_unit() {
     return 0
 }
 
+# ---------- 构建依赖: Go / Node / swap ----------
+# 4G swap: 小内存 VPS 编译防 OOM (移植自 main 分支)
+ensure_swap() {
+    local MEM SWAP_TOTAL
+    MEM=$(free -m | sed -n "s/^Mem:[^0-9]*\([0-9]*\).*/\1/p")
+    SWAP_TOTAL=$(free -m | awk "/^Swap:/{print \$2}")
+    if [[ "${MEM:-0}" -lt 4096 ]] && [[ "${SWAP_TOTAL:-0}" -lt 4096 ]]; then
+        echo -e "${green}小内存(${MEM}M): 建 4G swap 防止编译 OOM...${plain}"
+        swapoff /swapfile 2>/dev/null || true
+        rm -f /swapfile
+        fallocate -l 4G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=4096 status=none
+        chmod 600 /swapfile; mkswap /swapfile >/dev/null; swapon /swapfile
+    fi
+}
+
+# 安装 Go 工具链 (源码编译后端需要, CGO)
+ensure_go() {
+    if command -v /usr/local/go/bin/go >/dev/null 2>&1; then
+        /usr/local/go/bin/go version
+        return 0
+    fi
+    echo -e "${green}安装 Go 工具链 (源码编译需要)...${plain}"
+    local GOVER GOARCH_TAR
+    case "$(uname -m)" in
+        aarch64|arm64) GOARCH_TAR="arm64" ;;
+        *) GOARCH_TAR="amd64" ;;
+    esac
+    GOVER=$(curl -sL "https://go.dev/VERSION?m=text" | grep -oE "go[0-9]+\.[0-9]+(\.[0-9]+)?" | head -1)
+    [[ -n "$GOVER" ]] || GOVER="go1.26.5"
+    timeout 240 curl -sL "https://go.dev/dl/${GOVER}.linux-${GOARCH_TAR}.tar.gz" -o /tmp/go.tar.gz || { echo -e "${red}Go 下载失败${plain}"; return 1; }
+    tar -C /usr/local -xzf /tmp/go.tar.gz && rm -f /tmp/go.tar.gz
+    export PATH="/usr/local/go/bin:$PATH"
+    /usr/local/go/bin/go version
+}
+
+# 安装 Node.js 24 (前端 React SPA 编译需要)
+ensure_node() {
+    if command -v node >/dev/null 2>&1; then
+        local v; v=$(node -v 2>/dev/null | sed 's/^v//')
+        if [[ "$(printf '%s\n' '24.0.0' "$v" | sort -V | head -n1)" == "24.0.0" ]]; then
+            return 0
+        fi
+    fi
+    echo -e "${green}安装 Node.js 24 (前端编译需要)...${plain}"
+    local NODE_VER NODE_TAR ARCH_TAR tmp
+    ARCH_TAR="x64"
+    case "$(uname -m)" in
+        aarch64|arm64) ARCH_TAR="arm64" ;;
+    esac
+    NODE_VER=$(curl -sL "https://nodejs.org/dist/index.json" | tr ',' '\n' | grep -oE '"version":"v24\.[0-9.]+"' | head -1 | sed -E 's/.*"v([0-9.]+)".*/\1/')
+    [[ -n "$NODE_VER" ]] || NODE_VER="24.11.1"
+    NODE_TAR="node-v${NODE_VER}-linux-${ARCH_TAR}.tar.xz"
+    tmp=$(mktemp -d)
+    curl -fSL --max-time 240 "https://nodejs.org/dist/v${NODE_VER}/${NODE_TAR}" -o "$tmp/node.tar.xz" || { rm -rf "$tmp"; echo -e "${red}Node.js 下载失败${plain}"; return 1; }
+    tar -xJf "$tmp/node.tar.xz" -C /usr/local && rm -rf /usr/local/node24 2>/dev/null
+    mv "/usr/local/node-v${NODE_VER}-linux-${ARCH_TAR}" /usr/local/node24
+    rm -rf "$tmp"
+    export PATH="/usr/local/node24/bin:$PATH"
+    node -v
+}
+
+# ---------- 安装 Xray-core 内核 (面板运行依赖, 源码编译不自带) ----------
+install_xray() {
+    local panel_name arch_variant xray_tag xray_url tmp_dir
+    case "$(arch)" in
+        amd64) panel_name="amd64"; arch_variant="64" ;;
+        arm64) panel_name="arm64"; arch_variant="arm64-v8a" ;;
+        armv7|armv6|armv5) panel_name="arm32"; arch_variant="arm32-v7a" ;;
+        386)   panel_name="386";   arch_variant="32" ;;
+        *)     panel_name="amd64"; arch_variant="64" ;;
+    esac
+    if [[ -x "${xui_folder}/bin/xray-linux-${panel_name}" ]] && [[ "${FORCE:-0}" != "1" ]]; then
+        echo -e "${green}Xray-core (${panel_name}) 已存在, 跳过${plain}"
+        return 0
+    fi
+    echo -e "${green}安装 Xray-core 内核 (${panel_name})...${plain}"
+    mkdir -p "${xui_folder}/bin"
+    xray_tag=$(curl -Ls --retry 5 --retry-delay 3 --connect-timeout 15 --max-time 30 "https://api.github.com/repos/XTLS/Xray-core/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+    if [[ -z "$xray_tag" || "$xray_tag" == "null" ]]; then
+        xray_tag="v26.4.25"
+        echo -e "${yellow}无法获取 Xray-core 最新版本, 使用兜底 ${xray_tag}${plain}"
+    fi
+    xray_url="https://github.com/XTLS/Xray-core/releases/download/${xray_tag}/Xray-linux-${arch_variant}.zip"
+    tmp_dir=$(mktemp -d -t catvpn-xray.XXXXXX)
+    if ! curl -fL --retry 5 --retry-delay 3 --connect-timeout 15 --max-time 180 -o "$tmp_dir/xray.zip" "$xray_url"; then
+        rm -rf "$tmp_dir"
+        echo -e "${yellow}下载 Xray-core 失败 (${xray_url}), 跳过 (面板将无法代理)${plain}"
+        return 1
+    fi
+    ( cd "$tmp_dir" && unzip -o xray.zip >/dev/null 2>&1 ) || { rm -rf "$tmp_dir"; echo -e "${yellow}解压 Xray-core 失败, 跳过${plain}"; return 1; }
+    if [[ ! -f "$tmp_dir/xray" ]]; then
+        rm -rf "$tmp_dir"; echo -e "${yellow}Xray-core 压缩包缺少 xray 二进制, 跳过${plain}"; return 1
+    fi
+    mv "$tmp_dir/xray" "${xui_folder}/bin/xray-linux-${panel_name}"
+    chmod +x "${xui_folder}/bin/xray-linux-${panel_name}"
+    rm -rf "$tmp_dir"
+    echo -e "${green}Xray-core (${panel_name}) 安装完成${plain}"
+}
+
+# ---------- 源码编译 CatVPN (Option A: 品牌化 + VPNGate) ----------
+build_catvpn_from_source() {
+    echo -e "${green}CatVPN:${plain} 源码编译模式 (分支 v3-rebase, 品牌化 + VPNGate)"
+    cd "${xui_folder%/x-ui}/" || exit 1
+
+    # 停服务 + 清旧目录, 释放二进制句柄
+    if [[ -e ${xui_folder}/ ]]; then
+        systemctl stop x-ui 2>/dev/null || true
+        pkill -f 'mtg-linux-[^ ]* run ' > /dev/null 2>&1 || true
+        rm -rf ${xui_folder}/
+    fi
+
+    # 安装构建依赖 (git/gcc/make + CGO 需要的 sqlite/ssl 头文件 + 解压工具)
+    case "${release}" in
+        ubuntu|debian|armbian) apt-get install -y -q git gcc make build-essential libsqlite3-dev libssl-dev unzip 2>/dev/null || true ;;
+        fedora|amzn|virtuozzo|rhel|almalinux|rocky|ol|centos) dnf install -y -q git gcc make sqlite-devel openssl-devel unzip 2>/dev/null || true ;;
+        arch|manjaro|parch) pacman -Sy --noconfirm git gcc make sqlite openssl unzip 2>/dev/null || true ;;
+        alpine) apk add --no-cache git gcc make musl-dev sqlite-dev openssl-dev unzip 2>/dev/null || true ;;
+        *) apt-get install -y -q git gcc make build-essential libsqlite3-dev libssl-dev unzip 2>/dev/null || true ;;
+    esac
+
+    ensure_node || { echo -e "${red}Node.js 安装失败, 无法编译前端${plain}"; exit 1; }
+    ensure_go || { echo -e "${red}Go 安装失败, 无法编译后端${plain}"; exit 1; }
+    ensure_swap
+
+    # 克隆源码
+    echo -e "${green}克隆源码 qzyfl/CatVPN@v3-rebase ...${plain}"
+    rm -rf /tmp/catvpn-src
+    git clone --depth 1 --branch v3-rebase https://github.com/qzyfl/CatVPN /tmp/catvpn-src || { echo -e "${red}源码克隆失败${plain}"; exit 1; }
+    cd /tmp/catvpn-src
+
+    # 前端 (React SPA -> internal/web/dist, 由 Go //go:embed 嵌入)
+    echo -e "${green}编译前端 (npm ci && npm run build)...${plain}"
+    ( cd frontend && npm ci && npm run build ) || { echo -e "${red}前端编译失败${plain}"; exit 1; }
+
+    # 后端 (CGO)
+    echo -e "${green}编译后端 (CGO go build)...${plain}"
+    export PATH="/usr/local/go/bin:/usr/local/node24/bin:$PATH"
+    export GOPROXY="https://goproxy.cn,direct"
+    export CGO_ENABLED=1
+    export GOMAXPROCS=1
+    mkdir -p "${xui_folder}"
+    timeout 1500 go build -o "${xui_folder}/x-ui" main.go || { echo -e "${red}后端编译失败${plain}"; exit 1; }
+    chmod +x "${xui_folder}/x-ui"
+
+    # Xray 内核
+    install_xray || true
+
+    tag_version="v3-rebase (源码编译)"
+    echo -e "${green}CatVPN 源码编译完成${plain}"
+}
+
+# ---------- 共享收尾: x-ui.sh + systemd + fail2ban + 配置 + 横幅 ----------
+install_xui_shared_tail() {
+    # 安装 x-ui 控制脚本 (来自 CatVPN v3-rebase, 已中文化)
+    local xui_script_temp="/usr/bin/x-ui-temp.$$"
+    rm -f "${xui_script_temp}"
+    curl -fLRo "${xui_script_temp}" https://raw.githubusercontent.com/qzyfl/CatVPN/v3-rebase/x-ui.sh
+    if [[ $? -ne 0 || ! -s "${xui_script_temp}" ]]; then
+        rm -f "${xui_script_temp}"
+        echo -e "${red}下载 x-ui.sh 失败${plain}"
+        exit 1
+    fi
+    mv -f "${xui_script_temp}" /usr/bin/x-ui
+    chmod +x /usr/bin/x-ui
+    mkdir -p /var/log/x-ui
+
+    config_after_install
+
+    # etckeeper 兼容
+    if [ -d "/etc/.git" ]; then
+        if [ -f "/etc/.gitignore" ]; then
+            if ! grep -q "x-ui/x-ui.db" "/etc/.gitignore"; then
+                echo "" >> "/etc/.gitignore"
+                echo "x-ui/x-ui.db" >> "/etc/.gitignore"
+                echo -e "${green}Added x-ui.db to /etc/.gitignore for etckeeper${plain}"
+            fi
+        else
+            echo "x-ui/x-ui.db" > "/etc/.gitignore"
+            echo -e "${green}Created /etc/.gitignore and added x-ui.db for etckeeper${plain}"
+        fi
+    fi
+
+    if [[ $release == "alpine" ]]; then
+        xui_rc_temp="/etc/init.d/x-ui.tmp.$$"
+        rm -f "${xui_rc_temp}"
+        curl -fLRo "${xui_rc_temp}" https://raw.githubusercontent.com/MHSanaei/3x-ui/main/x-ui.rc
+        if [[ $? -ne 0 || ! -s "${xui_rc_temp}" ]]; then
+            rm -f "${xui_rc_temp}"
+            echo -e "${red}下载 x-ui.rc 失败${plain}"
+            exit 1
+        fi
+        mv -f "${xui_rc_temp}" /etc/init.d/x-ui
+        chmod +x /etc/init.d/x-ui
+        rc-update add x-ui
+        rc-service x-ui start
+    else
+        service_installed=false
+        local svc_src=""
+        if [[ -f /tmp/catvpn-src/x-ui.service.${release} ]]; then
+            svc_src="/tmp/catvpn-src/x-ui.service.${release}"
+        elif [[ -f /tmp/catvpn-src/x-ui.service.rhel ]]; then
+            svc_src="/tmp/catvpn-src/x-ui.service.rhel"
+        fi
+        if [[ -n "$svc_src" ]]; then
+            if _install_xui_service_unit "$svc_src" "false"; then
+                service_installed=true
+            fi
+        fi
+        if [ "$service_installed" = false ]; then
+            local variant="rhel"
+            case "${release}" in
+                ubuntu|debian|armbian) variant="debian" ;;
+                arch|manjaro|parch) variant="arch" ;;
+            esac
+            if ! _install_xui_service_unit "https://raw.githubusercontent.com/qzyfl/CatVPN/v3-rebase/x-ui.service.${variant}" "true"; then
+                echo -e "${red}安装 x-ui.service 失败${plain}"
+                exit 1
+            fi
+            service_installed=true
+        fi
+        if [ "$service_installed" = true ]; then
+            echo -e "${green}配置 systemd 单元...${plain}"
+            chown root:root ${xui_service}/x-ui.service > /dev/null 2>&1
+            chmod 644 ${xui_service}/x-ui.service > /dev/null 2>&1
+            systemctl daemon-reload
+            systemctl enable x-ui
+            systemctl start x-ui
+        else
+            echo -e "${red}未能安装 x-ui.service${plain}"
+            exit 1
+        fi
+    fi
+
+    setup_fail2ban
+
+    echo -e "${green}x-ui ${tag_version}${plain} 安装完成, 正在运行..."
+    echo -e ""
+    echo -e "┌───────────────────────────────────────────────────────┐
+│  ${blue}x-ui 控制菜单:${plain}                                  │
+│  ${blue}x-ui${plain}              - 管理脚本                       │
+│  ${blue}x-ui start${plain}        - 启动                           │
+│  ${blue}x-ui stop${plain}         - 停止                           │
+│  ${blue}x-ui restart${plain}      - 重启                           │
+│  ${blue}x-ui status${plain}       - 状态                           │
+│  ${blue}x-ui update${plain}       - 更新                           │
+│  ${blue}x-ui uninstall${plain}    - 卸载                           │
+└───────────────────────────────────────────────────────┘"
+}
+
 install_x-ui() {
     cd ${xui_folder%/x-ui}/
+
+    # Option A: 默认源码编译 (CatVPN 品牌化 + VPNGate); FORCE_UPSTREAM=1 走上游预编译
+    if [[ "${FORCE_UPSTREAM:-0}" != "1" ]]; then
+        build_catvpn_from_source
+        install_xui_shared_tail
+        return 0
+    fi
 
     # Download resources
     if [ $# == 0 ]; then
