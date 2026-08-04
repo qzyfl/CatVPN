@@ -1686,6 +1686,7 @@ do_uninstall() {
     rm -f ${xui_service}/x-ui.service
     systemctl daemon-reload 2>/dev/null
 
+    systemctl stop wg-quick@wg-warp 2>/dev/null
     wg-quick down wg-warp 2>/dev/null
     systemctl disable wg-quick@wg-warp 2>/dev/null
     rm -f /etc/wireguard/wg-warp.conf /etc/wireguard/wgcf-account.toml /etc/wireguard/wgcf-profile.conf
