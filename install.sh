@@ -52,15 +52,18 @@ do_uninstall() {
     is_zh && echo -e "${green}[CatVPN]${plain} 开始卸载..." || echo -e "${green}[CatVPN]${plain} Uninstalling..."
     # 卸载过程允许部分步骤失败, 不因某条命令非零退出而中断
     set +e
-    # 1. 停止并禁用面板服务
+    # 1. 停止并禁用面板服务 (含 xray 子进程)
     systemctl stop x-ui 2>/dev/null
     systemctl disable x-ui 2>/dev/null
     rm -f /etc/systemd/system/x-ui.service
     systemctl daemon-reload 2>/dev/null
+    # 杀残留 xray 进程 (面板停了但 xray 可能还活着)
+    pkill -f "xray-linux-" 2>/dev/null
 
     # 2. 停止并移除 WARP 出口 (专供 VPNGate 的 wg-warp)
     systemctl stop wg-quick@wg-warp 2>/dev/null
     wg-quick down wg-warp 2>/dev/null
+    ip link del wg-warp 2>/dev/null
     systemctl disable wg-quick@wg-warp 2>/dev/null
     rm -f /etc/wireguard/wg-warp.conf /etc/wireguard/wgcf-account.toml /etc/wireguard/wgcf-profile.conf
     rm -f /usr/local/bin/wgcf
@@ -75,10 +78,19 @@ do_uninstall() {
     rm -rf "$DATA_DIR"          # /etc/x-ui (面板配置 + 账号)
     rm -rf "$LANG_DIR"          # /etc/x-mili (语言文件)
 
-    # 5. 清理安装时创建的小内存 4G swap
+    # 5. 清理 VPNGate/OpenVPN 残留
+    rm -rf /tmp/vpngate-check-*.ovpn 2>/dev/null
+    rm -rf /tmp/catvpn-src 2>/dev/null
+
+    # 6. 清理安装时创建的小内存 4G swap
     if [[ -f /swapfile ]]; then
         swapoff /swapfile 2>/dev/null
         rm -f /swapfile
+    fi
+
+    # 7. 清理 Go 工具链 (仅本脚本安装的)
+    if [[ -d /usr/local/go ]] && [[ ! "$(command -v go 2>/dev/null)" =~ "/usr/local" ]]; then
+        rm -rf /usr/local/go
     fi
     set -e
 
@@ -496,9 +508,20 @@ install_program_files
 init_panel_settings
 install_service
 setup_warp
-setup_bbr
 
-# 重启前先写好 BBR sysctl (重启后自动生效)
+# ---------- BBR v3 Max (可选, 用户确认后安装) ----------
+if is_zh; then
+    read -rp "是否安装 BBR v3 Max 内核? [Y/n]: " bbr_choice
+    [[ "$bbr_choice" == "n" || "$bbr_choice" == "N" ]] && SKIP_BBR=1 || SKIP_BBR=0
+else
+    read -rp "Install BBR v3 Max kernel? [Y/n]: " bbr_choice
+    [[ "$bbr_choice" == "n" || "$bbr_choice" == "N" ]] && SKIP_BBR=1 || SKIP_BBR=0
+fi
+if [[ "${SKIP_BBR:-0}" != "1" ]]; then
+    setup_bbr
+fi
+
+# 写入 BBR sysctl (无论是否装新内核都写, 保证当前内核也启用 BBR)
 cat > /etc/sysctl.d/99-catvpn.conf <<EOF
 net.core.default_qdisc=fq
 net.ipv4.tcp_congestion_control=bbr
