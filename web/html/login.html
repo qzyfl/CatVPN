@@ -139,6 +139,7 @@
       animationStarted: false
     },
     async mounted() {
+      window.__catvpnApp = this;
       if (window.catvpnHideLoader) window.catvpnHideLoader();
       this.lang = LanguageManager.getLanguage();
       this.twoFactorEnable = await this.getTwoFactorEnable();

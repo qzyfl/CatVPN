@@ -200,7 +200,7 @@
             openLink(key) {
                 return key.startsWith('http') ?
                     window.open(key, '_blank', 'noopener,noreferrer') :
-                    location.href = key
+                    (window.catvpnNavigate ? catvpnNavigate(key) : (location.href = key))
             },
             closeDrawer() {
                 this.visible = false;

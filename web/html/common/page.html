@@ -128,6 +128,91 @@
     axios.defaults.baseURL = basePath;
   </script>
   <script src="{{ .base_path }}assets/js/websocket.js?{{ .cur_ver }}"></script>
+  <script>
+  /* SPA-lite 导航：点击菜单不再整页刷新，只换 #app 内容 + 重跑内联脚本，
+     避免每次重新解析 2-3MB JS（antd/vue 等）。任何异常自动回退整页刷新。 */
+  function catvpnLoadScript(src) {
+    return new Promise(function (resolve, reject) {
+      var sc = document.createElement('script');
+      sc.src = src;
+      sc.onload = function () { resolve(); };
+      sc.onerror = function () { reject(new Error('script load failed: ' + src)); };
+      document.head.appendChild(sc);
+    });
+  }
+  function catvpnScriptAlreadyLoaded(src) {
+    return !!document.querySelector('script[src="' + src.replace(/["\\]/g, '\\$&') + '"]');
+  }
+  window.catvpnNavigate = async function (targetUrl) {
+    try {
+      var loader = document.getElementById('catvpn-page-loader');
+      if (!loader) {
+        loader = document.createElement('div');
+        loader.id = 'catvpn-page-loader';
+        loader.innerHTML = '<div class="spinner"></div><span class="loader-text">加载中...</span>';
+        document.body.appendChild(loader);
+      }
+      loader.classList.remove('hidden');
+
+      var resp = await fetch(targetUrl, {
+        credentials: 'same-origin',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      });
+      if (!resp.ok) throw new Error('fetch failed: ' + resp.status);
+      var html = await resp.text();
+      var doc = new DOMParser().parseFromString(html, 'text/html');
+
+      var newApp = doc.querySelector('#app');
+      if (!newApp) throw new Error('no #app in response');
+      var scripts = Array.prototype.slice.call(doc.querySelectorAll('script'));
+
+      // 外部脚本(如 codemirror, 仅 xray 页)按需加载, 已加载则跳过
+      for (var i = 0; i < scripts.length; i++) {
+        var s = scripts[i];
+        if (s.src && !catvpnScriptAlreadyLoaded(s.src)) {
+          await catvpnLoadScript(s.src);
+        }
+      }
+
+      // 销毁旧 app + 清理 websocket 监听器 + 断开, 防止泄漏
+      if (window.__catvpnApp) {
+        try { window.__catvpnApp.$destroy(); } catch (e) {}
+        window.__catvpnApp = null;
+      }
+      if (window.wsClient) {
+        try { if (window.wsClient.listeners && window.wsClient.listeners.clear) window.wsClient.listeners.clear(); } catch (e) {}
+        try { window.wsClient.disconnect(); } catch (e) {}
+      }
+
+      // 替换 #app(含新页面正确的 sidebar activeTab, 服务端已渲染)
+      var oldApp = document.querySelector('#app');
+      oldApp.outerHTML = newApp.outerHTML;
+
+      // 合并内联脚本为一块执行(const 共享作用域; Vue.component 仍全局注册)
+      var inlineCode = '';
+      for (var j = 0; j < scripts.length; j++) {
+        var ss = scripts[j];
+        if (!ss.src && ss.textContent && ss.textContent.trim()) {
+          inlineCode += '\n;(function(){\n' + ss.textContent + '\n})();\n';
+        }
+      }
+      // 间接 eval：在全局作用域执行, 页面脚本可访问顶层 const(basePath 等) 与全局 Vue/antd
+      if (inlineCode) (0, eval)(inlineCode);
+
+      if (doc.title) document.title = doc.title;
+      history.pushState({ catvpn: true }, '', targetUrl);
+      if (window.catvpnHideLoader) window.catvpnHideLoader();
+      else loader.classList.add('hidden');
+    } catch (e) {
+      console.error('[catvpnNavigate] failed, fallback to full reload:', e);
+      window.location.href = targetUrl;
+    }
+  };
+  // 浏览器前进/后退：直接整页刷新, 简单可靠
+  window.addEventListener('popstate', function (e) {
+    if (e.state && e.state.catvpn) window.location.reload();
+  });
+  </script>
   {{ end }}
 
   {{ define "page/body_end" }}
