@@ -697,6 +697,7 @@
       }
     },
     async mounted() {
+      if (window.catvpnHideLoader) window.catvpnHideLoader();
       this.entryHost = window.location.hostname;
       this.entryPort = window.location.port;
       this.entryProtocol = window.location.protocol;

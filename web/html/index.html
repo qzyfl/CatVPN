@@ -1565,6 +1565,7 @@
       },
     },
     async mounted() {
+      if (window.catvpnHideLoader) window.catvpnHideLoader();
       if (window.location.protocol !== "https:") {
         this.showAlert = true;
       }

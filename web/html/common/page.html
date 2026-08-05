@@ -7,6 +7,30 @@
   <meta name="renderer" content="webkit">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="noindex,nofollow">
+  <!-- 页面切换 loading 遮罩：内联在最前面，JS 加载完之前就可见，消灭白屏+[Y]闪现 -->
+  <style>
+    /* 必须最先声明：v-cloak 在外部 CSS 解析前就生效 */
+    [v-cloak] { display: none !important; }
+
+    /* 全局页面 loading 遮罩 — 整页刷新期间显示，Vue mounted 后自动消失 */
+    #catvpn-page-loader {
+      position: fixed; inset: 0; z-index: 99999;
+      display: flex; align-items: center; justify-content: center;
+      background: #f5f5f5; color: #333;
+      font-family: system-ui, -apple-system, sans-serif;
+      transition: opacity .25s ease;
+    }
+    #catvpn-page-loader.dark { background: #141414; color: rgba(255,255,255,.85); }
+    #catvpn-page-loader.hidden { opacity: 0; pointer-events: none; }
+    #catvpn-page-loader .spinner {
+      width: 32px; height: 32px; border: 3px solid #e0e0e0;
+      border-top-color: #008771; border-radius: 50%;
+      animation: catvpn-spin .7s linear infinite;
+    }
+    #catvpn-page-loader.dark .spinner { border-color: rgba(255,255,255,.15); border-top-color: #00b090; }
+    @keyframes catvpn-spin { to { transform: rotate(360deg); } }
+    #catvpn-page-loader .loader-text { margin-left: 12px; font-size: 14px; font-weight: 500; }
+  </style>
   {{/* 首屏关键资源预加载：提前并行拉取最重的 antd/vue，缩短面板首屏时间 */}}
   <link rel="preload" href="{{ .base_path }}assets/ant-design-vue/antd.min.css" as="style">
   <link rel="preload" href="{{ .base_path }}assets/vue/vue.min.js" as="script">
@@ -16,9 +40,6 @@
   <link rel="icon" href="{{ .base_path }}assets/catvpn-logo.png">
   <link rel="icon" type="image/x-icon" href="{{ .base_path }}assets/catvpn-logo.ico">
   <style>
-    [v-cloak] {
-      display: none;
-    }
 
     /* vazirmatn-regular - arabic_latin_latin-ext */
     @font-face {
@@ -86,6 +107,11 @@
 {{ define "page/body_start" }}
 
 <body>
+  <!-- 页面 loading 遮罩：整页刷新时立即显示，Vue mounted 后由 catvpnHideLoader() 消失 -->
+  <div id="catvpn-page-loader">
+    <div class="spinner"></div>
+    <span class="loader-text">加载中...</span>
+  </div>
   <div id="message"></div>
   {{ end }}
 
@@ -105,6 +131,29 @@
   {{ end }}
 
   {{ define "page/body_end" }}
+<script>
+/* 全局 loading 遮罩控制：Vue mounted 后调用 catvpnHideLoader() 消除白屏 */
+(function() {
+  var el = document.getElementById('catvpn-page-loader');
+  if (!el) return;
+  /* 跟随系统/已存储的主题 */
+  try {
+    if (localStorage.getItem('theme') === 'dark' ||
+        (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches))
+      el.classList.add('dark');
+  } catch(e) {}
+  /* 安全网：3 秒后强制消失（防止某个页面忘记调用 hideLoader） */
+  var done = false;
+  function hide() {
+    if (done) return;
+    done = true;
+    el.classList.add('hidden');
+    setTimeout(function() { el.remove(); }, 300);
+  }
+  window.catvpnHideLoader = hide;
+  setTimeout(hide, 3000);
+})();
+</script>
 </body>
 
 </html>
