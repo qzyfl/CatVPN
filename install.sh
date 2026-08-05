@@ -223,7 +223,7 @@ detect_arch() {
 
 # ---------- 尝试下载预编译包 (对齐 X-MILI 模型) ----------
 try_prebuilt() {
-    local arch url pkg tmp_dir
+    local arch url tmp_dir
     arch=$(detect_arch)
     local goarch="linux-${arch}"
     # 只认显式 latest tag 的滚动预编译包; releases/latest 按发布时间解析会跳到旧的带 tag 发布(如 v1.2.1), 绝不能回退到它
@@ -231,32 +231,24 @@ try_prebuilt() {
     tmp_dir=$(mktemp -d -t catvpn-prebuilt.XXXXXX)
 
     is_zh && log "尝试下载预编译包 (${goarch})..." || log "Trying prebuilt bundle (${goarch})..."
-    local ok=0
     for i in 1 2 3; do
-        if curl -fL --retry 3 --retry-delay 2 --max-time 120 "$url" -o "$tmp_dir/pkg.tar.gz" 2>/dev/null; then
-            if tar -xzf "$tmp_dir/pkg.tar.gz" -C "$tmp_dir" 2>/dev/null && [[ -x "$tmp_dir/x-ui" ]]; then
-                ok=1; break
+        if curl -fL --max-time 120 "$url" -o "$tmp_dir/pkg.tar.gz" 2>/dev/null \
+           && tar -xzf "$tmp_dir/pkg.tar.gz" -C "$tmp_dir" 2>/dev/null \
+           && [[ -x "$tmp_dir/x-ui" ]]; then
+            mkdir -p "$INSTALL_DIR"
+            # 运行中二进制不能直接 cp 覆盖(ETXTBSY/Text file busy): 先 rename 旧文件, 新 cp 用新 inode 不冲突
+            if [[ -e "$INSTALL_DIR/x-ui" ]]; then
+                mv -f "$INSTALL_DIR/x-ui" "$INSTALL_DIR/x-ui.old" 2>/dev/null || true
             fi
+            cp "$tmp_dir/x-ui" "$INSTALL_DIR/x-ui"
+            chmod +x "$INSTALL_DIR/x-ui"
+            rm -f "$INSTALL_DIR/x-ui.old"
+            rm -rf "$tmp_dir"
+            is_zh && log "已使用预编译包, 大小 $(stat -c%s "$INSTALL_DIR/x-ui") 字节" || log "Preinstalled, size $(stat -c%s "$INSTALL_DIR/x-ui") bytes"
+            return 0
         fi
         sleep 2
     done
-    if [[ "$ok" == "1" ]]; then
-        if tar -xzf "$tmp_dir/pkg.tar.gz" -C "$tmp_dir" 2>/dev/null; then
-            if [[ -x "$tmp_dir/x-ui" ]]; then
-                mkdir -p "$INSTALL_DIR"
-                # 运行中二进制不能直接 cp 覆盖(ETXTBSY/Text file busy): 先 rename 旧文件, 新 cp 用新 inode 不冲突
-                if [[ -e "$INSTALL_DIR/x-ui" ]]; then
-                    mv -f "$INSTALL_DIR/x-ui" "$INSTALL_DIR/x-ui.old" 2>/dev/null || true
-                fi
-                cp "$tmp_dir/x-ui" "$INSTALL_DIR/x-ui"
-                chmod +x "$INSTALL_DIR/x-ui"
-                rm -f "$INSTALL_DIR/x-ui.old"
-                rm -rf "$tmp_dir"
-                is_zh && log "已使用预编译包, 大小 $(stat -c%s "$INSTALL_DIR/x-ui") 字节" || log "Preinstalled, size $(stat -c%s "$INSTALL_DIR/x-ui") bytes"
-                return 0
-            fi
-        fi
-    fi
     rm -rf "$tmp_dir"
     return 1
 }
