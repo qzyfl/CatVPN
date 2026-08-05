@@ -68,14 +68,16 @@ jobs:
           name: prebuilt-linux-amd64
           path: artifacts
 
-      - name: Publish / update Release (latest)
+      - name: Publish / update Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest
-          name: CatVPN Prebuilt Binaries
+          # 打 tag(v*)时发对应版本 release; 推 main 时发 latest(滚动)
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'latest' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'CatVPN Prebuilt Binaries' }}
           files: artifacts/*
           prerelease: false
           overwrite: true
           body: |
             CatVPN 预编译二进制（linux/amd64，CGO 启用）。
             install.sh 安装时自动下载此包；arm64 等架构自动回退源码编译。
+            ${{ startsWith(github.ref, 'refs/tags/') && format('版本 {0}', github.ref_name) || '滚动最新构建（latest）' }}
