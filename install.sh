@@ -24,12 +24,15 @@ set -e
 
 APP_NAME="CatVPN"
 REPO="https://github.com/qzyfl/CatVPN"
-REPO_RAW="${REPO_RAW:-https://raw.githubusercontent.com/qzyfl/CatVPN/main}"
+# 源地址硬编码, 不允许被环境变量覆盖, 避免 curl|bash 场景下的供应链注入
+REPO_RAW="https://raw.githubusercontent.com/qzyfl/CatVPN/main"
 INSTALL_DIR="/usr/local/x-ui"
 DATA_DIR="/etc/x-ui"
 LANG_DIR="/etc/x-mili"
 LANG_FILE="$LANG_DIR/lang"
 PANEL_PORT="${PANEL_PORT:-2053}"
+# Xray-core 兜底版本: GitHub API 受限时使用. 注意随新版本滚动更新 (去掉此变量需同步修改 install_xray)
+XRAY_VERSION_FALLBACK="v26.4.25"
 
 red='\033[0;31m'; green='\033[0;32m'; yellow='\033[0;33m'; plain='\033[0m'
 log()  { echo -e "${green}[CatVPN]${plain} $*"; }
@@ -151,7 +154,7 @@ install_runtime_deps() {
     is_zh && log "安装运行依赖与编译工具..." || log "Installing runtime deps and build tools..."
     if command -v apt-get >/dev/null 2>&1; then
         is_zh && warn "若系统自动更新占用 apt 锁, 将等待释放。" || warn "Waiting for apt/dpkg lock if needed."
-        apt-get -o DPkg::Lock::Timeout=1800 update -qq
+        apt-get -o DPkg::Lock::Timeout=1800 update -qq || warn "apt update 部分源失败, 继续安装"
         apt-get -o DPkg::Lock::Timeout=1800 install -y -qq ca-certificates curl tar gzip git wget jq unzip iptables \
             build-essential wireguard-tools
     elif command -v dnf >/dev/null 2>&1; then
@@ -178,7 +181,7 @@ ensure_swap() {
         swapoff /swapfile 2>/dev/null || true
         rm -f /swapfile
         fallocate -l 4G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=4096 status=none
-        chmod 600 /swapfile; mkswap /swapfile >/dev/null; swapon /swapfile
+        chmod 600 /swapfile; mkswap /swapfile >/dev/null; swapon /swapfile 2>/dev/null || warn "swapon 失败(受限环境如 OpenVZ/容器), 跳过 swap"
     fi
 }
 
@@ -222,30 +225,68 @@ detect_arch() {
 }
 
 # ---------- 尝试下载预编译包 (对齐 X-MILI 模型) ----------
+# 校验预编译包完整性: 优先比对官方 sha256 校验和, 否则退化为 gzip 魔术字节 + 最小体积检查
+# (防止在 GitHub API 限流/网络异常时把 HTML 错误页或截断包当合法二进制 root 安装)
+verify_prebuilt() {
+    local pkg="$1" sum_url="$2"
+    local sum_file; sum_file=$(mktemp -t catvpn-sum.XXXXXX)
+    if curl -fsSL --max-time 60 "$sum_url" -o "$sum_file" 2>/dev/null && [[ -s "$sum_file" ]]; then
+        local expected; expected=$(awk 'NR==1{print $1}' "$sum_file" | tr -d '[:space:]')
+        local actual; actual=$(sha256sum "$pkg" 2>/dev/null | awk '{print $1}')
+        rm -f "$sum_file"
+        if [[ -n "$expected" && "$expected" == "$actual" ]]; then
+            return 0
+        fi
+        warn "预编译包 sha256 校验失败, 放弃使用预编译包"
+        return 1
+    fi
+    rm -f "$sum_file"
+    # 兜底: 校验 gzip 魔术字节 (1f 8b) 且体积合理, 拒绝非 ELF/截断包
+    if ! head -c 2 "$pkg" 2>/dev/null | od -An -tx1 | tr -d ' \n' | grep -q '1f8b'; then
+        warn "预编译包不是合法 gzip (疑似错误页), 放弃"
+        return 1
+    fi
+    local sz; sz=$(stat -c%s "$pkg" 2>/dev/null || echo 0)
+    if [[ "$sz" -lt 5000000 ]]; then
+        warn "预编译包过小 (${sz} 字节), 疑似不完整, 放弃"
+        return 1
+    fi
+    return 0
+}
+
 try_prebuilt() {
-    local arch url tmp_dir
+    local arch url tmp_dir sum_url found_bin
     arch=$(detect_arch)
     local goarch="linux-${arch}"
     # 只认显式 latest tag 的滚动预编译包; releases/latest 按发布时间解析会跳到旧的带 tag 发布(如 v1.2.1), 绝不能回退到它
     local url="${REPO}/releases/download/latest/x-mili-${goarch}.tar.gz"
+    sum_url="${url}.sha256"
     tmp_dir=$(mktemp -d -t catvpn-prebuilt.XXXXXX)
 
     is_zh && log "尝试下载预编译包 (${goarch})..." || log "Trying prebuilt bundle (${goarch})..."
     for i in 1 2 3; do
         if curl -fL --max-time 120 "$url" -o "$tmp_dir/pkg.tar.gz" 2>/dev/null \
-           && tar -xzf "$tmp_dir/pkg.tar.gz" -C "$tmp_dir" 2>/dev/null \
-           && [[ -x "$tmp_dir/x-ui" ]]; then
-            mkdir -p "$INSTALL_DIR"
-            # 运行中二进制不能直接 cp 覆盖(ETXTBSY/Text file busy): 先 rename 旧文件, 新 cp 用新 inode 不冲突
-            if [[ -e "$INSTALL_DIR/x-ui" ]]; then
-                mv -f "$INSTALL_DIR/x-ui" "$INSTALL_DIR/x-ui.old" 2>/dev/null || true
+           && tar -xzf "$tmp_dir/pkg.tar.gz" -C "$tmp_dir" 2>/dev/null; then
+            # 完整性校验 (sha256 优先, 否则 gzip 魔术字节 + 大小兜底), 失败即放弃预编译
+            if ! verify_prebuilt "$tmp_dir/pkg.tar.gz" "$sum_url"; then
+                rm -rf "$tmp_dir"
+                return 1
             fi
-            cp "$tmp_dir/x-ui" "$INSTALL_DIR/x-ui"
-            chmod +x "$INSTALL_DIR/x-ui"
-            rm -f "$INSTALL_DIR/x-ui.old"
-            rm -rf "$tmp_dir"
-            is_zh && log "已使用预编译包, 大小 $(stat -c%s "$INSTALL_DIR/x-ui") 字节" || log "Preinstalled, size $(stat -c%s "$INSTALL_DIR/x-ui") bytes"
-            return 0
+            # tarball 可能把 x-ui 放在子目录, 用 find 定位真正的可执行文件
+            found_bin=$(find "$tmp_dir" -type f -name x-ui -perm -u+x 2>/dev/null | head -1)
+            if [[ -n "$found_bin" ]]; then
+                mkdir -p "$INSTALL_DIR"
+                # 运行中二进制不能直接 cp 覆盖(ETXTBSY/Text file busy): 先 rename 旧文件, 新 cp 用新 inode 不冲突
+                if [[ -e "$INSTALL_DIR/x-ui" ]]; then
+                    mv -f "$INSTALL_DIR/x-ui" "$INSTALL_DIR/x-ui.old" 2>/dev/null || true
+                fi
+                cp "$found_bin" "$INSTALL_DIR/x-ui"
+                chmod +x "$INSTALL_DIR/x-ui"
+                rm -f "$INSTALL_DIR/x-ui.old"
+                rm -rf "$tmp_dir"
+                is_zh && log "已使用预编译包, 大小 $(stat -c%s "$INSTALL_DIR/x-ui") 字节" || log "Preinstalled, size $(stat -c%s "$INSTALL_DIR/x-ui") bytes"
+                return 0
+            fi
         fi
         sleep 2
     done
@@ -255,8 +296,10 @@ try_prebuilt() {
 
 # ---------- 编译面板 (fallback) ----------
 build_panel() {
+    # 注意: 已安装二进制且未设 FORCE=1 时直接跳过, 不会原地更新已装面板。
+    # 更新面板请显式运行: FORCE=1 bash install.sh
     if [[ -x "$INSTALL_DIR/x-ui" ]] && [[ "${FORCE:-0}" != "1" ]]; then
-        is_zh && log "已存在二进制, 跳过编译 (FORCE=1 可强制重编)" || log "Binary exists, skip build (FORCE=1 to rebuild)"
+        is_zh && log "已存在二进制, 跳过编译/更新 (更新请运行 FORCE=1 bash install.sh)" || log "Binary exists, skip build (update with FORCE=1 bash install.sh)"
         return
     fi
 
@@ -309,10 +352,10 @@ install_xray() {
     is_zh && log "安装 Xray-core 内核 (${panel_name}) 到 bin/ 目录..." || log "Installing Xray-core (${panel_name}) into bin/..."
     mkdir -p "$INSTALL_DIR/bin"
 
-    # 获取 Xray-core 最新版本 (GitHub API 受限时用兜底固定版本)
+    # 获取 Xray-core 最新版本 (GitHub API 受限时用兜底固定版本 XRAY_VERSION_FALLBACK)
     xray_tag=$(curl -Ls --retry 5 --retry-delay 3 --connect-timeout 15 --max-time 30 "https://api.github.com/repos/XTLS/Xray-core/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
     if [[ -z "$xray_tag" || "$xray_tag" == "null" ]]; then
-        xray_tag="v26.4.25"
+        xray_tag="$XRAY_VERSION_FALLBACK"
         warn "无法获取 Xray-core 最新版本, 使用兜底版本 $xray_tag"
     fi
     xray_url="https://github.com/XTLS/Xray-core/releases/download/${xray_tag}/Xray-linux-${arch_variant}.zip"
@@ -321,17 +364,36 @@ install_xray() {
         rm -rf "$tmp_dir"
         warn "下载 Xray-core 失败 (${xray_url}), 跳过 (面板将无法代理, 请检查网络后重跑)"; return 1
     fi
+    # 完整性兜底: 校验 zip 魔术字节 (PK\x03\x04), 拒绝非压缩包/错误页
+    if ! head -c 4 "$tmp_dir/xray.zip" 2>/dev/null | od -An -tx1 | tr -d ' \n' | grep -q '504b0304'; then
+        rm -rf "$tmp_dir"; warn "Xray-core 压缩包非合法 zip, 跳过"; return 1
+    fi
     ( cd "$tmp_dir" && unzip -o xray.zip >/dev/null 2>&1 ) || { rm -rf "$tmp_dir"; warn "解压 Xray-core 失败, 跳过"; return 1; }
     if [[ ! -f "$tmp_dir/xray" ]]; then
         rm -rf "$tmp_dir"; warn "Xray-core 压缩包缺少 xray 二进制, 跳过"; return 1
     fi
     mv "$tmp_dir/xray" "$INSTALL_DIR/bin/xray-linux-${panel_name}"
     chmod +x "$INSTALL_DIR/bin/xray-linux-${panel_name}"
+    # 32 位 ARM: 运行期 GetBinaryName() 返回 xray-linux-arm, 这里补符号链接指向已装的 arm32 包
+    if [[ "$panel_name" == "arm32" ]]; then
+        ln -sf "xray-linux-${panel_name}" "$INSTALL_DIR/bin/xray-linux-arm"
+        chmod +x "$INSTALL_DIR/bin/xray-linux-arm"
+    fi
     rm -rf "$tmp_dir"
 
     # 路由规则库 (失败仅告警, 不阻断安装)
     curl -fL --retry 5 --max-time 60 -o "$INSTALL_DIR/bin/geoip.dat"   "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat"   || warn "geoip.dat 下载失败"
     curl -fL --retry 5 --max-time 60 -o "$INSTALL_DIR/bin/geosite.dat" "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat" || warn "geosite.dat 下载失败"
+    # 路由库兜底校验: 下载成功但体积过小(疑似截断/错误页)时移除, 避免无效路由
+    for f in geoip.dat geosite.dat; do
+        if [[ -e "$INSTALL_DIR/bin/$f" ]]; then
+            sz=$(stat -c%s "$INSTALL_DIR/bin/$f" 2>/dev/null || echo 0)
+            if [[ "$sz" -lt 1048576 ]]; then
+                warn "$f 下载异常(过小 ${sz} 字节), 已移除避免无效路由, 请重跑安装补全"
+                rm -f "$INSTALL_DIR/bin/$f"
+            fi
+        fi
+    done
     log "Xray-core (${panel_name}) 已安装到 $INSTALL_DIR/bin/"
 }
 
@@ -386,12 +448,17 @@ Wants=network.target
 
 [Service]
 Environment="XRAY_VMESS_AEAD_FORCED=false"
+# 运行期资源限制: GOMAXPROCS 放宽到 2 (区别于编译期 GOMAXPROCS=1), 限制内存/任务数/文件句柄防 OOM 与 fd 耗尽
+Environment="GOMAXPROCS=2"
 Type=simple
 WorkingDirectory=${INSTALL_DIR}/
 ExecStart=${INSTALL_DIR}/x-ui
 ExecReload=kill -USR1 \$MAINPID
 Restart=on-failure
 RestartSec=5s
+MemoryMax=512M
+TasksMax=64
+LimitNOFILE=65536
 
 [Install]
 WantedBy=multi-user.target
@@ -433,7 +500,8 @@ setup_warp() {
     fi
     # 通过 Cloudflare 原生客户端 API (v0a4005) 注册, 直接拿到 WireGuard 配置
     tos=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
-    host_name=$(hostname)
+    # 转义 hostname 中的反斜杠与双引号, 防止其含 " 时注册 JSON 畸形导致 WARP 注册失败
+    host_name=$(hostname | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
     reg_body=$(printf '{"key":"%s","tos":"%s","type":"PC","model":"x-ui","name":"%s"}' "$pub_key" "$tos" "$host_name")
     http_code=$(curl -s --connect-timeout 10 --max-time 30 -o /tmp/catvpn-warp-reg.json -w '%{http_code}' \
         -H "CF-Client-Version: a-7.21-0721" -H "Content-Type: application/json" \
@@ -524,11 +592,12 @@ setup_bbr() {
     fi
     is_zh && log "BBR max tag: $TAG" || log "BBR max tag: $TAG"
     ASSETS=$(echo "$DATA" | jq -r --arg t "$TAG" '.[]|select(.tag_name==$t)|.assets[].browser_download_url|select(test("(-dbg_|-dbgsym_)";"i")|not)')
-    rm -f /tmp/linux-*.deb
-    for U in $ASSETS; do wget -q "$U" -P /tmp/ || warn "下载失败: $U"; done
-    if ! ls /tmp/linux-*.deb >/dev/null 2>&1; then warn "无可用 deb, 跳过 BBR"; return; fi
-    dpkg -i /tmp/linux-*.deb && update-grub || warn "BBR 内核安装失败, 继续 (BBR 将不生效)"
-    rm -f /tmp/linux-*.deb
+    # 用私有临时目录存放 deb, 避免 /tmp/linux-*.deb 可预测文件名被本地攻击者抢先写入(root 安装风险)
+    bbr_tmp=$(mktemp -d -t catvpn-bbr.XXXXXX)
+    for U in $ASSETS; do wget -q "$U" -P "$bbr_tmp" || warn "下载失败: $U"; done
+    if ! ls "$bbr_tmp"/*.deb >/dev/null 2>&1; then warn "无可用 deb, 跳过 BBR"; rm -rf "$bbr_tmp"; return; fi
+    dpkg -i "$bbr_tmp"/*.deb && update-grub || warn "BBR 内核安装失败, 继续 (BBR 将不生效)"
+    rm -rf "$bbr_tmp"
     NEED_REBOOT=1
     is_zh && log "BBR 内核已装, 稍后重启生效" || log "BBR kernel installed, reboot to activate"
 }
@@ -548,6 +617,7 @@ print_guide() {
         [[ "$panel_initialized" == "1" ]] && { echo -e "登录账号: ${green}${PANEL_USER}${plain}"; echo -e "登录密码: ${green}${PANEL_PASS}${plain}"; echo -e "安全后缀: ${green}${web_path}${plain}"; } || echo -e "登录信息: ${yellow}已保留现有账号和密码${plain}"
         echo -e "WARP 出口: ${green}wg-warp (VPNGate 130.158.75.0/24)${plain}"
         echo -e "BBR: ${green}$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)${plain}"
+        echo -e "${yellow}更新面板请运行: ${plain}${green}FORCE=1 bash install.sh${plain}"
         echo -e "${green}=============================================${plain}"
     else
         echo -e "${green}============ ${APP_NAME} Installed ============${plain}"
@@ -555,6 +625,7 @@ print_guide() {
         [[ "$panel_initialized" == "1" ]] && { echo -e "Username: ${green}${PANEL_USER}${plain}"; echo -e "Password: ${green}${PANEL_PASS}${plain}"; echo -e "Secure suffix: ${green}${web_path}${plain}"; } || echo -e "Login: ${yellow}existing credentials preserved${plain}"
         echo -e "WARP egress: ${green}wg-warp (VPNGate 130.158.75.0/24)${plain}"
         echo -e "BBR: ${green}$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)${plain}"
+        echo -e "${yellow}To update the panel, run: ${plain}${green}FORCE=1 bash install.sh${plain}"
         echo -e "${green}=============================================${plain}"
     fi
     echo ""
@@ -574,23 +645,46 @@ install_service
 setup_warp
 
 # ---------- BBR v3 Max (可选, 用户确认后安装) ----------
-if is_zh; then
-    read -rp "是否安装 BBR v3 Max 内核? [Y/n]: " bbr_choice
-    [[ "$bbr_choice" == "n" || "$bbr_choice" == "N" ]] && SKIP_BBR=1 || SKIP_BBR=0
+# 非交互(管道 curl|bash 或显式 CATVPN_NONINTERACTIVE=1): 不询问, 默认安装 BBR(可用 CATVPN_SKIP_BBR=1 跳过)
+if [[ ! -t 0 ]] || [[ "${CATVPN_NONINTERACTIVE:-0}" == "1" ]]; then
+    SKIP_BBR="${CATVPN_SKIP_BBR:-0}"
 else
-    read -rp "Install BBR v3 Max kernel? [Y/n]: " bbr_choice
-    [[ "$bbr_choice" == "n" || "$bbr_choice" == "N" ]] && SKIP_BBR=1 || SKIP_BBR=0
+    if is_zh; then
+        read -rp "是否安装 BBR v3 Max 内核? [Y/n]: " bbr_choice || true
+        [[ "$bbr_choice" == "n" || "$bbr_choice" == "N" ]] && SKIP_BBR=1 || SKIP_BBR=0
+    else
+        read -rp "Install BBR v3 Max kernel? [Y/n]: " bbr_choice || true
+        [[ "$bbr_choice" == "n" || "$bbr_choice" == "N" ]] && SKIP_BBR=1 || SKIP_BBR=0
+    fi
 fi
 if [[ "${SKIP_BBR:-0}" != "1" ]]; then
     setup_bbr
 fi
 
-# 写入 BBR sysctl (无论是否装新内核都写, 保证当前内核也启用 BBR)
-cat > /etc/sysctl.d/99-catvpn.conf <<EOF
+# 写入 BBR sysctl: 仅当当前内核实际支持 BBR 时才宣称 BBR, 避免误导用户
+if modprobe tcp_bbr 2>/dev/null; then
+    avail=$(sysctl -n net.ipv4.tcp_available_congestion_control 2>/dev/null)
+    if [[ "$avail" == *"bbr"* ]]; then
+        cat > /etc/sysctl.d/99-catvpn.conf <<EOF
 net.core.default_qdisc=fq
 net.ipv4.tcp_congestion_control=bbr
 EOF
-sysctl --system >/dev/null 2>&1 || true
+        sysctl --system >/dev/null 2>&1 || true
+        is_zh && log "BBR 已写入 sysctl 并生效" || log "BBR written to sysctl and active"
+    else
+        warn "当前内核不支持 BBR, 仅设置 qdisc=fq (BBR 需 BBR v3 Max 新内核)"
+        cat > /etc/sysctl.d/99-catvpn.conf <<EOF
+net.core.default_qdisc=fq
+EOF
+        sysctl --system >/dev/null 2>&1 || true
+    fi
+else
+    warn "加载 tcp_bbr 模块失败, 跳过 BBR 设置 (BBR 需 BBR v3 Max 新内核)"
+    cat > /etc/sysctl.d/99-catvpn.conf <<EOF
+net.core.default_qdisc=fq
+EOF
+    sysctl --system >/dev/null 2>&1 || true
+fi
 
 print_guide
 
