@@ -31,9 +31,31 @@ type vpnGateIPInfo struct {
 }
 
 func (VPNGateFetcher) Fetch() ([]VPNGateServer, error) {
-	resp, err := (&http.Client{Timeout: 20 * time.Second}).Get(vpnGateAPIURL)
+	// 单次 GET 无重试易因瞬时抖动/上游 5xx/限流而整体失败; 改为 2-3 次指数退避重试,
+	// 并将超时放宽到 30s (节点列表可能较大, 放宽响应体读取耗时).
+	client := &http.Client{Timeout: 30 * time.Second}
+	var (
+		resp *http.Response
+		err  error
+	)
+	for attempt := 0; attempt < 3; attempt++ {
+		resp, err = client.Get(vpnGateAPIURL)
+		if err == nil && resp != nil && resp.StatusCode == http.StatusOK {
+			break
+		}
+		if resp != nil {
+			resp.Body.Close()
+			resp = nil
+		}
+		if attempt < 2 {
+			time.Sleep(time.Duration(attempt+1) * 2 * time.Second)
+		}
+	}
 	if err != nil {
 		return nil, err
+	}
+	if resp == nil {
+		return nil, fmt.Errorf("VPNGate request failed: empty response")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
@@ -183,13 +205,22 @@ func fetchVPNGateIPData(ips []string) map[string]vpnGateIPInfo {
 		}
 		payload, _ := json.Marshal(ips[i:end])
 		resp, err := client.Post("http://ip-api.com/batch?fields=status,isp,org,as,hosting,query", "application/json", bytes.NewReader(payload))
+		// resp 非 nil 但 err 非 nil 时(如重定向/连接错误)仍可能持有 body, 必须关闭避免泄漏
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 		if err != nil {
 			continue
 		}
+		// 校验状态码: ip-api 限流(429)或异常时不应静默解码为 Unknown, 该批 IP 跳过并退避
+		if resp.StatusCode != http.StatusOK {
+			if resp.StatusCode == http.StatusTooManyRequests {
+				time.Sleep(2 * time.Second)
+			}
+			continue
+		}
 		var rows []vpnGateIPResponse
-		err = json.NewDecoder(resp.Body).Decode(&rows)
-		resp.Body.Close()
-		if err != nil {
+		if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil {
 			continue
 		}
 		for _, row := range rows {
