@@ -19,8 +19,22 @@ import (
 )
 
 // GetBinaryName returns the Xray binary filename for the current OS and architecture.
+//
+// On 32-bit ARM (runtime.GOARCH == "arm"), install.sh installs the kernel as
+// "xray-linux-arm32" and creates a "xray-linux-arm" symlink for backward compatibility
+// (see review M13). We prefer the explicit arm32 name when it is present so the lookup
+// does not depend solely on that symlink existing. amd64 / arm64 / other arches are
+// unaffected.
 func GetBinaryName() string {
-	return fmt.Sprintf("xray-%s-%s", runtime.GOOS, runtime.GOARCH)
+	name := fmt.Sprintf("xray-%s-%s", runtime.GOOS, runtime.GOARCH)
+	if runtime.GOARCH == "arm" {
+		arm32Name := fmt.Sprintf("xray-%s-arm32", runtime.GOOS)
+		arm32Path := config.GetBinFolderPath() + "/" + arm32Name
+		if _, err := os.Stat(arm32Path); err == nil {
+			return arm32Name
+		}
+	}
+	return name
 }
 
 // GetBinaryPath returns the full path to the Xray binary executable.
@@ -91,6 +105,35 @@ func GetAccessLogPath() (string, error) {
 		}
 	}
 	return "", err
+}
+
+// GetErrorLogPath reads the Xray config and returns the error log file path.
+// It returns ("", false) when file error logging is disabled or not configured.
+func GetErrorLogPath() (string, bool) {
+	configData, err := os.ReadFile(GetConfigPath())
+	if err != nil {
+		logger.Warningf("Failed to read configuration file: %s", err)
+		return "", false
+	}
+
+	jsonConfig := map[string]any{}
+	if err := json.Unmarshal(configData, &jsonConfig); err != nil {
+		logger.Warningf("Failed to parse JSON configuration: %s", err)
+		return "", false
+	}
+
+	if logCfg, ok := jsonConfig["log"].(map[string]any); ok {
+		if errPath, ok := logCfg["error"].(string); ok && errPath != "" {
+			return errPath, true
+		}
+	}
+	return "", false
+}
+
+// GetPanelLogPath returns the path to the panel's own log file (3xui.log) written by
+// logger.InitLogger into the log folder. Used by the log-cleanup job to bound its growth.
+func GetPanelLogPath() string {
+	return config.GetLogFolder() + "/3xui.log"
 }
 
 // stopProcess calls Stop on the given Process instance.

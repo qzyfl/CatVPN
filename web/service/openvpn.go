@@ -509,10 +509,13 @@ func sanitizeVPNGateOpenVPNConfig(base64Config string) (string, error) {
 	blocked := map[string]bool{
 		"askpass":               true,
 		"auth-user-pass-verify": true,
+		"auth-user-pass":        true,
+		"allow-pull-fqdn":       true,
 		"cd":                    true,
 		"client-connect":        true,
 		"client-disconnect":     true,
 		"daemon":                true,
+		"dhcp-option":           true,
 		"down":                  true,
 		"ipchange":              true,
 		"learn-address":         true,
@@ -520,6 +523,8 @@ func sanitizeVPNGateOpenVPNConfig(base64Config string) (string, error) {
 		"log-append":            true,
 		"management":            true,
 		"plugin":                true,
+		"redirect-gateway":      true,
+		"redirect-private":      true,
 		"route-pre-down":        true,
 		"route-up":              true,
 		"script-security":       true,
@@ -557,6 +562,13 @@ func sanitizeVPNGateOpenVPNConfig(base64Config string) (string, error) {
 		if name == "route-nopull" {
 			continue
 		}
+		// 仅允许 tun*/tap* 设备, 防止 root openvpn 接管默认路由/物理网卡导致流量劫持或中间人
+		if name == "dev" {
+			fields := strings.Fields(trimmed)
+			if len(fields) < 2 || !devIsTunTap(fields[1]) {
+				continue
+			}
+		}
 		out = append(out, line)
 	}
 	if err := scanner.Err(); err != nil {
@@ -564,6 +576,14 @@ func sanitizeVPNGateOpenVPNConfig(base64Config string) (string, error) {
 	}
 	out = append(out, "route-nopull")
 	return strings.Join(out, "\n") + "\n", nil
+}
+
+// devIsTunTap 校验 OpenVPN dev 指令的设备名是否仅限 tun*/tap*, 避免接管默认路由或物理网卡
+func devIsTunTap(dev string) bool {
+	if strings.HasPrefix(dev, "tun") || strings.HasPrefix(dev, "tap") {
+		return true
+	}
+	return false
 }
 
 func ensureOpenVPNInstalled(ctx context.Context, taskID int64) error {
@@ -996,6 +1016,7 @@ func triggerVPNGateFailover(taskID int64) {
 	fallbackEnable := vpnGateOpenVPN.fallbackEnable
 	globalFallback := vpnGateOpenVPN.globalFallback
 	currentServer := vpnGateOpenVPN.status.Server
+	tunIP := vpnGateOpenVPN.status.TunIP
 	if vpnGateOpenVPN.failedUntil == nil {
 		vpnGateOpenVPN.failedUntil = map[string]time.Time{}
 	}
@@ -1007,8 +1028,23 @@ func triggerVPNGateFailover(taskID int64) {
 	vpnGateOpenVPN.status.Phase = "connecting"
 	vpnGateOpenVPN.status.Message = "检测到节点失效，正在自动选择后备节点"
 	vpnGateOpenVPN.status.Progress = 50
-	vpnGateOpenVPN.stopLocked()
+	// 锁内仅取消 context 并取出进程句柄, 不执行 pkill/ip 等跨进程/网络 IO
+	oldCancel := vpnGateOpenVPN.cancel
+	vpnGateOpenVPN.cancel = nil
+	oldCmd := vpnGateOpenVPN.cmd
+	vpnGateOpenVPN.cmd = nil
 	vpnGateOpenVPN.Unlock()
+
+	// 锁外执行 kill 与策略路由清理 (外部进程 / 网络 IO), 避免长时间持锁阻塞其他链路
+	if oldCancel != nil {
+		oldCancel()
+	}
+	if oldCmd != nil && oldCmd.Process != nil {
+		_ = oldCmd.Process.Kill()
+	} else {
+		killActiveVPNGateOpenVPN()
+	}
+	cleanupOpenVPNPolicyRoute(tunIP)
 
 	// 1. Fetch fresh list of servers
 	vpngateService := &VPNGateService{}
@@ -1122,7 +1158,6 @@ func containsString(slice []string, s string) bool {
 
 func updateXrayVPNGateOutbound(outbound map[string]any) error {
 	managedOutboundMu.Lock()
-	defer managedOutboundMu.Unlock()
 
 	settingService := &SettingService{}
 	xraySettingService := &XraySettingService{}
@@ -1131,22 +1166,26 @@ func updateXrayVPNGateOutbound(outbound map[string]any) error {
 	// 1. Get template config
 	templateConfig, err := settingService.GetXrayConfigTemplate()
 	if err != nil {
+		managedOutboundMu.Unlock()
 		return err
 	}
 
 	// 2. Parse config JSON
 	var configMap map[string]any
 	if err := json.Unmarshal([]byte(UnwrapXrayTemplateConfig(templateConfig)), &configMap); err != nil {
+		managedOutboundMu.Unlock()
 		return err
 	}
 
 	// 3. Find and update outbound with tag "vpngate"
 	outboundsVal, ok := configMap["outbounds"]
 	if !ok {
+		managedOutboundMu.Unlock()
 		return fmt.Errorf("outbounds key not found in template config")
 	}
 	outbounds, ok := outboundsVal.([]any)
 	if !ok {
+		managedOutboundMu.Unlock()
 		return fmt.Errorf("outbounds is not an array")
 	}
 
@@ -1170,16 +1209,23 @@ func updateXrayVPNGateOutbound(outbound map[string]any) error {
 	// 4. Serialize back
 	newConfigBytes, err := json.MarshalIndent(configMap, "", "  ")
 	if err != nil {
+		managedOutboundMu.Unlock()
 		return err
 	}
 
-	// 5. Save settings
+	// 5. Save settings (写盘在锁内完成, 保证与并发写者互斥)
 	if err := xraySettingService.SaveXraySetting(string(newConfigBytes)); err != nil {
+		managedOutboundMu.Unlock()
 		return err
 	}
+	managedOutboundMu.Unlock()
 
-	// 6. Restart Xray
-	return xrayService.RestartXray(true)
+	// 6. Restart Xray (锁外执行, 避免跨数秒 IO 长时间占锁阻塞其他链路)
+	if err := xrayService.RestartXray(true); err != nil {
+		logger.Warningf("[VPNGate] Restart Xray after outbound update failed: %v", err)
+		return err
+	}
+	return nil
 }
 
 func (s *OpenVPNService) UninstallVPNGate() error {

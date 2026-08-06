@@ -1,11 +1,12 @@
 name: Build CatVPN Prebuilt Binaries
 
 # 对齐 X-MILI 的"下载预编译"模型：
-#   - 仅在 GitHub 托管的 amd64 runner 上构建 linux/amd64（CGO 启用），
-#     与上游 X-MILI 一致，保证稳定可复现。
-#   - arm64 / 其他架构由 install.sh 自动回退到源码编译（已内置）。
+#   - 在 GitHub 托管的 amd64 / arm64 runner 上分别构建 linux/amd64 与 linux/arm64（CGO 启用），
+#     与上游 X-MILI 一致，保证稳定可复现，并补齐 arm64 预编译包（审查 M13 / 跨架构兼容）。
+#   - 32 位 ARM 等其它架构由 install.sh 自动回退到源码编译（已内置）。
 #   - 推送到 main 即重新发布到 tag `latest`（非 prerelease），
-#     确保 install.sh 的 `releases/latest/download/x-mili-linux-amd64.tar.gz` 可命中。
+#     确保 install.sh 的 `releases/latest/download/x-mili-linux-<arch>.tar.gz` 可命中。
+#   - 发布后对每个产物做 `curl -fIL` 可达性校验（审查 L9）。
 
 on:
   push:
@@ -18,7 +19,15 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,11 +40,11 @@ jobs:
       - name: Remove stray C file
         run: rm -f pow_alps.c
 
-      - name: Build (linux/amd64, CGO)
+      - name: Build (linux/${{ matrix.arch }}, CGO)
         env:
           CGO_ENABLED: 1
           GOOS: linux
-          GOARCH: amd64
+          GOARCH: ${{ matrix.arch }}
           GOPROXY: https://goproxy.cn,direct
         run: |
           mkdir -p dist
@@ -43,29 +52,35 @@ jobs:
           chmod +x dist/x-ui
           echo "Build size: $(du -sh dist/x-ui)"
 
-      - name: Package (linux/amd64)
+      - name: Package (linux/${{ matrix.arch }})
         run: |
           cd dist
-          tar czf "../x-mili-linux-amd64.tar.gz" x-ui
-          sha256sum "../x-mili-linux-amd64.tar.gz" > "../x-mili-linux-amd64.sha256"
-          ls -lh "../x-mili-linux-amd64.tar.gz"
+          tar czf "../x-mili-linux-${{ matrix.arch }}.tar.gz" x-ui
+          sha256sum "../x-mili-linux-${{ matrix.arch }}.tar.gz" > "../x-mili-linux-${{ matrix.arch }}.sha256"
+          ls -lh "../x-mili-linux-${{ matrix.arch }}.tar.gz"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: prebuilt-linux-amd64
+          name: prebuilt-linux-${{ matrix.arch }}
           path: |
-            x-mili-linux-amd64.tar.gz
-            x-mili-linux-amd64.sha256
+            x-mili-linux-${{ matrix.arch }}.tar.gz
+            x-mili-linux-${{ matrix.arch }}.sha256
 
   release:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: Download artifact
+      - name: Download amd64 artifact
         uses: actions/download-artifact@v4
         with:
           name: prebuilt-linux-amd64
+          path: artifacts
+
+      - name: Download arm64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: prebuilt-linux-arm64
           path: artifacts
 
       - name: Publish / update Release
@@ -78,6 +93,15 @@ jobs:
           prerelease: false
           overwrite: true
           body: |
-            CatVPN 预编译二进制（linux/amd64，CGO 启用）。
-            install.sh 安装时自动下载此包；arm64 等架构自动回退源码编译。
+            CatVPN 预编译二进制（linux/amd64 与 linux/arm64，CGO 启用），均附带 sha256 校验和。
+            install.sh 安装时自动下载对应架构的预编译包；32 位 ARM 等其它架构自动回退源码编译。
             ${{ startsWith(github.ref, 'refs/tags/') && format('版本 {0}', github.ref_name) || '滚动最新构建（latest）' }}
+
+      - name: Verify release assets are reachable
+        run: |
+          set -euo pipefail
+          for a in amd64 arm64; do
+            url="https://github.com/${{ github.repository }}/releases/download/latest/x-mili-linux-${a}.tar.gz"
+            echo "Checking $url"
+            curl -fIL "$url"
+          done

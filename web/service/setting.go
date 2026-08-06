@@ -31,6 +31,9 @@ var defaultValueMap = map[string]string{
 	"webListen":                   "",
 	"webDomain":                   "",
 	"webPort":                     "2053",
+	// 安全提示 (A02 传输层安全): webCertFile/webKeyFile 默认为空 => 面板以 HTTP(2053) 明文运行。
+	// 此时 WARP private_key/access_token/device_id/license_key 与 admin 登录凭据均经明文传输,
+	// 在云厂商/共享网络下易被嗅探。生产环境务必配置 TLS 证书 (SetCertFile/SetKeyFile) 或前置 HTTPS 反向代理。
 	"webCertFile":                 "",
 	"webKeyFile":                  "",
 	"secret":                      random.Seq(32),
@@ -166,6 +169,13 @@ func (s *SettingService) GetAllSetting() (*entity.AllSetting, error) {
 		err := setSetting(key, value)
 		if err != nil {
 			return nil, err
+		}
+		// 安全提示 (A02 传输层安全): 面板默认 HTTP 明文运行, WARP 凭证与登录凭据存在嗅探风险。
+		// 仅在首次播种默认值时触发一次 (webKeyFile 为空即 HTTP 模式)。
+		if key == "webKeyFile" && value == "" {
+			logger.Warning("面板以 HTTP 明文模式运行 (webCertFile/webKeyFile 为空): " +
+				"WARP private_key/access_token/device_id/license_key 与 admin 登录凭据将明文传输, " +
+				"在云厂商/共享网络下易被嗅探。建议配置 TLS 证书 (SetCertFile/SetKeyFile) 或前置 HTTPS 反向代理。")
 		}
 	}
 

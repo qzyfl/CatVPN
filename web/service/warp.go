@@ -302,15 +302,25 @@ func (s *WarpService) checkAndRepairWarpLocked(force bool) error {
 	}
 
 	var lastErr string
-	for i := 1; i <= 10; i++ {
+	const maxAttempts = 4
+	for i := 1; i <= maxAttempts; i++ {
 		privateKey, publicKey, err := generateWarpKeypair()
 		if err != nil {
 			lastErr = err.Error()
+			// 密钥生成失败与网络无关, 不必退避
 			continue
 		}
 		_, warpData, warpConfig, err := s.registerWarp(privateKey, publicKey, false)
 		if err != nil {
 			lastErr = err.Error()
+			// Cloudflare 限流(429)或瞬时错误: 退避后重试, 避免触发风控
+			if i < maxAttempts {
+				if strings.Contains(lastErr, "429") {
+					time.Sleep(time.Duration(i) * 2 * time.Second)
+				} else {
+					time.Sleep(time.Duration(i) * time.Second)
+				}
+			}
 			continue
 		}
 		candidate, err := buildWarpOutbound(warpData, warpConfig)
@@ -327,9 +337,13 @@ func (s *WarpService) checkAndRepairWarpLocked(force bool) error {
 			return nil
 		} else {
 			lastErr = msg
+			// 候选节点测试失败: 退避后换新节点重试
+			if i < maxAttempts {
+				time.Sleep(time.Duration(i) * time.Second)
+			}
 		}
 	}
-	return common.NewErrorf("连续更换 10 次仍不可用，已停止本轮 WARP 自动更换: %s", lastErr)
+	return common.NewErrorf("连续更换 %d 次仍不可用，已停止本轮 WARP 自动更换: %s", maxAttempts, lastErr)
 }
 
 func xrayReferencesOutbound(configMap map[string]any, tag string) bool {
@@ -475,27 +489,38 @@ func saveWarpReplacement(warpOutbound map[string]any, warpData map[string]string
 	}
 
 	managedOutboundMu.Lock()
-	defer managedOutboundMu.Unlock()
 
 	templateConfig, err := (&SettingService{}).GetXrayConfigTemplate()
 	if err != nil {
+		managedOutboundMu.Unlock()
 		return err
 	}
 	var configMap map[string]any
 	if err := json.Unmarshal([]byte(UnwrapXrayTemplateConfig(templateConfig)), &configMap); err != nil {
+		managedOutboundMu.Unlock()
 		return err
 	}
 	latestOutbounds, _ := configMap["outbounds"].([]any)
 	configMap["outbounds"] = replaceOutboundByTag(latestOutbounds, "warp", warpOutbound)
 	newConfigBytes, err := json.MarshalIndent(configMap, "", "  ")
 	if err != nil {
+		managedOutboundMu.Unlock()
 		return err
 	}
 	if err := (&XraySettingService{}).SaveXraySetting(string(newConfigBytes)); err != nil {
+		managedOutboundMu.Unlock()
 		return err
 	}
 	if err := (&SettingService{}).SetWarp(string(warpDataJSON)); err != nil {
+		managedOutboundMu.Unlock()
 		return err
 	}
-	return (&XrayService{}).RestartXray(true)
+	managedOutboundMu.Unlock()
+
+	// 锁外重启 xray (跨数秒 IO), 失败仅告警不阻断
+	if err := (&XrayService{}).RestartXray(true); err != nil {
+		logger.Warningf("[WARP] Restart Xray after WARP replacement failed: %v", err)
+		return err
+	}
+	return nil
 }

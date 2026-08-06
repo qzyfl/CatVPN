@@ -447,7 +447,13 @@ func (s *Server) Stop() error {
 	var err1 error
 	var err2 error
 	if s.httpServer != nil {
-		err1 = s.httpServer.Shutdown(s.ctx)
+		// 用独立的 shutdownCtx 传给 Shutdown: s.ctx 已在上面被 s.cancel() 取消,
+		// 若直接传 s.ctx, Shutdown 会立即返回 context canceled, 无法优雅排空在途请求。
+		// 这里新建一个 context, 并用 time.AfterFunc 兜底 10s 强制关闭, 防止永久阻塞。
+		shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
+		stopHard := time.AfterFunc(10*time.Second, shutdownCancel)
+		defer stopHard.Stop()
+		err1 = s.httpServer.Shutdown(shutdownCtx)
 	}
 	if s.listener != nil {
 		err2 = s.listener.Close()
