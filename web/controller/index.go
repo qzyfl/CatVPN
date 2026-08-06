@@ -70,10 +70,9 @@ func (a *IndexController) login(c *gin.Context) {
 
 	user, _ := a.userService.CheckUser(form.Username, form.Password, form.TwoFactorCode)
 	safeUser := template.HTMLEscapeString(form.Username)
-	safePass := template.HTMLEscapeString(form.Password)
 
 	if user == nil {
-		logger.Warningf("wrong username: \"%s\", password: \"%s\", IP: \"%s\"", safeUser, safePass, getRemoteIp(c))
+		logger.Warningf("wrong username: %q, IP: %s", safeUser, getRemoteIp(c))
 		pureJsonMsg(c, http.StatusOK, false, I18nWeb(c, "pages.login.toasts.wrongUsernameOrPassword"))
 		return
 	}

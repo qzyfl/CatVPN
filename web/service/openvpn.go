@@ -331,6 +331,20 @@ func (s *OpenVPNService) StopVPNGate() OpenVPNStatus {
 }
 
 func (s *OpenVPNService) connectVPNGate(ctx context.Context, taskID int64, server VPNGateServer) {
+	failureHandled := false
+	defer func() {
+		if failureHandled {
+			return
+		}
+		vpnGateOpenVPN.Lock()
+		phase := vpnGateOpenVPN.status.Phase
+		id := vpnGateOpenVPN.id
+		vpnGateOpenVPN.Unlock()
+		// 兜底：若退出时仍处于非终态（未连接/未取消/未失败），补一次节点失败处理，避免面板卡死在 connecting
+		if id == taskID && phase != "connected" && phase != "canceled" && phase != "failed" {
+			handleVPNGateNodeFailure(taskID, server, "VPNGate 连接异常退出")
+		}
+	}()
 	if runtime.GOOS != "linux" {
 		vpnGateOpenVPN.fail(taskID, "OpenVPN 托管连接仅支持 Linux")
 		return
@@ -343,6 +357,7 @@ func (s *OpenVPNService) connectVPNGate(ctx context.Context, taskID int64, serve
 	vpnGateOpenVPN.setTask(taskID, "preparing", 30, "正在清洗配置")
 	ovpn, err := sanitizeVPNGateOpenVPNConfig(server.OpenVPNConfig)
 	if err != nil {
+		failureHandled = true
 		handleVPNGateNodeFailure(taskID, server, err.Error())
 		return
 	}
@@ -398,18 +413,22 @@ func (s *OpenVPNService) connectVPNGate(ctx context.Context, taskID int64, serve
 			phase := vpnGateOpenVPN.status.Phase
 			vpnGateOpenVPN.Unlock()
 			if phase == "connected" {
+				failureHandled = true
 				go triggerVPNGateFailover(taskID)
-			} else if phase == "connecting" || phase == "waiting_confirm" || phase == "canceled" {
+			} else if phase == "canceled" {
+				failureHandled = true
 				return
 			} else {
-				if err == nil {
-					handleVPNGateNodeFailure(taskID, server, "OpenVPN 已退出")
-				} else {
-					handleVPNGateNodeFailure(taskID, server, err.Error())
+				failureHandled = true
+				msg := "OpenVPN 已退出"
+				if err != nil {
+					msg += ": " + err.Error()
 				}
+				handleVPNGateNodeFailure(taskID, server, msg)
 			}
 			return
 		case <-deadline:
+			failureHandled = true
 			handleVPNGateNodeFailure(taskID, server, "OpenVPN 连接超时")
 			return
 		case <-ticker.C:
@@ -469,10 +488,12 @@ func (s *OpenVPNService) connectVPNGate(ctx context.Context, taskID int64, serve
 				}()
 
 				// Spawn network watchdog checker
+				failureHandled = true
 				go startNetworkChecker(ctx, taskID, tunIP, tunDev)
 				return
 			}
 			if writer.contains("AUTH_FAILED") {
+				failureHandled = true
 				handleVPNGateNodeFailure(taskID, server, "OpenVPN 认证失败")
 				return
 			}
