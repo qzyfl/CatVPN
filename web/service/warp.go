@@ -93,6 +93,10 @@ func (s *WarpService) GetWarpConfig() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		resp.Body.Close()
+		return "", common.NewErrorf("cloudflare GET failed: %s", resp.Status)
+	}
 	defer resp.Body.Close()
 	buffer := &bytes.Buffer{}
 	_, err = buffer.ReadFrom(resp.Body)
@@ -127,6 +131,10 @@ func (s *WarpService) registerWarp(secretKey string, publicKey string, save bool
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", nil, nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		resp.Body.Close()
+		return "", nil, nil, common.NewErrorf("cloudflare POST failed: %s", resp.Status)
 	}
 	defer resp.Body.Close()
 	buffer := &bytes.Buffer{}
@@ -211,6 +219,10 @@ func (s *WarpService) SetWarpLicense(license string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		resp.Body.Close()
+		return "", common.NewErrorf("cloudflare PUT failed: %s", resp.Status)
+	}
 	defer resp.Body.Close()
 	buffer := &bytes.Buffer{}
 	_, err = buffer.ReadFrom(resp.Body)
@@ -223,7 +235,8 @@ func (s *WarpService) SetWarpLicense(license string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if response["success"] == false {
+	success, _ := response["success"].(bool)
+	if !success {
 		errorArr, _ := response["errors"].([]any)
 		if len(errorArr) > 0 {
 			if errorObj, ok := errorArr[0].(map[string]any); ok {
