@@ -7,7 +7,9 @@ yellow='\033[0;33m'
 plain='\033[0m'
 
 app_name="CatVPN"
-repo_raw_base="${CATVPN_RAW_BASE:=https://raw.githubusercontent.com/qzyfl/CatVPN/main}"
+# 供应链防护 (M2): 仓库源地址硬编码为官方 qzyfl/CatVPN, 禁止运行时通过环境变量覆盖,
+# 防止本地提权/供应链注入 (任何能在 root 环境注入该变量的攻击者都能拉取并执行恶意脚本)。
+repo_raw_base="https://raw.githubusercontent.com/qzyfl/CatVPN/main"
 lang_file="${CATVPN_LANG_FILE:=/etc/x-mili/lang}"
 
 load_language() {
@@ -46,6 +48,33 @@ function LOGE() {
 
 function LOGI() {
     echo -e "${green}[INF] $* ${plain}"
+}
+
+# 供应链防护 (M2): 下载远程脚本到临时文件, 校验非空 + bash -n 语法检查 + 来源(qzyfl/CatVPN) 后再执行, 失败中止。
+# 用于替代 `curl ... | bash` / `bash <(curl ...)`, 防止管道被截断或下载到恶意脚本直接以 root 执行。
+safe_run_remote_script() {
+    local url="$1"
+    local tmp_script
+    tmp_script="$(mktemp -t catvpn-script.XXXXXX.sh)" || { LOGE "无法创建临时文件 / Failed to create temp file"; return 1; }
+    trap 'rm -f "$tmp_script"' RETURN
+    if ! curl -fsSL "$url" -o "$tmp_script"; then
+        LOGE "下载脚本失败 / Failed to download script: $url"
+        return 1
+    fi
+    if [[ ! -s "$tmp_script" ]]; then
+        LOGE "下载的脚本为空 / Downloaded script is empty: $url"
+        return 1
+    fi
+    if ! bash -n "$tmp_script" 2>/dev/null; then
+        LOGE "脚本语法检查失败, 已中止以防供应链攻击 / Script syntax check failed, aborted: $url"
+        return 1
+    fi
+    # 供应链防护: 确认脚本确实来自 qzyfl/CatVPN, 拒绝非预期来源, 防止再次被降级/注入
+    if ! grep -q 'qzyfl/CatVPN' "$tmp_script"; then
+        LOGE "脚本来源异常 (非 qzyfl/CatVPN), 已中止以防供应链攻击 / Unexpected script source, aborted: $url"
+        return 1
+    fi
+    bash "$tmp_script"
 }
 
 # Port helpers: detect listener and owning process (best effort)
@@ -156,11 +185,11 @@ before_show_menu() {
 }
 
 install() {
-    bash <(curl -Ls "${repo_raw_base}/install.sh")
+    safe_run_remote_script "${repo_raw_base}/install.sh"
 }
 
 update() {
-    bash <(curl -Ls "${repo_raw_base}/update.sh")
+    safe_run_remote_script "${repo_raw_base}/update.sh"
 }
 
 update_menu() {
@@ -211,10 +240,10 @@ uninstall() {
     echo ""
     if is_zh; then
         echo -e "卸载完成。\n"
-        echo "重新安装: bash <(curl -Ls ${repo_raw_base}/install.sh)"
+        echo "重新安装: bash <(curl -fsSL ${repo_raw_base}/install.sh)"
     else
         echo -e "Uninstalled Successfully.\n"
-        echo "Reinstall with: bash <(curl -Ls ${repo_raw_base}/install.sh)"
+        echo "Reinstall with: bash <(curl -fsSL ${repo_raw_base}/install.sh)"
     fi
     echo ""
 
@@ -1173,8 +1202,22 @@ install_acme() {
     LOGI "Installing acme.sh..."
     cd ~ || return 1 # Ensure you can change to the home directory
 
-    curl -s https://get.acme.sh | sh
-    if [ $? -ne 0 ]; then
+    # 供应链防护 (M2): 下载到临时文件, 校验非空 + bash -n 语法检查后再执行, 失败中止
+    local acme_install="$(mktemp -t catvpn-acme.XXXXXX.sh)"
+    if ! curl -fsSL https://get.acme.sh -o "$acme_install"; then
+        LOGE "下载 acme.sh 失败 / Failed to download acme.sh"
+        rm -f "$acme_install"
+        return 1
+    fi
+    if [[ ! -s "$acme_install" ]] || ! bash -n "$acme_install" 2>/dev/null; then
+        LOGE "acme.sh 校验失败, 已中止以防供应链攻击 / acme.sh verification failed, aborted"
+        rm -f "$acme_install"
+        return 1
+    fi
+    bash "$acme_install"
+    local acme_rc=$?
+    rm -f "$acme_install"
+    if [ $acme_rc -ne 0 ]; then
         LOGE "Installation of acme.sh failed."
         return 1
     else
@@ -1982,7 +2025,18 @@ run_speedtest() {
                 return 1
             else
                 echo "Installing Speedtest using $pkg_manager..."
-                curl -s $speedtest_install_script | bash
+                # 供应链防护 (M2): 下载到临时文件, 校验非空 + bash -n 语法检查后再执行, 失败中止
+                local st_install="$(mktemp -t catvpn-speedtest.XXXXXX.sh)"
+                if ! curl -fsSL "$speedtest_install_script" -o "$st_install"; then
+                    LOGE "下载 speedtest 安装脚本失败 / Failed to download speedtest install script"
+                    rm -f "$st_install"
+                elif [[ ! -s "$st_install" ]] || ! bash -n "$st_install" 2>/dev/null; then
+                    LOGE "speedtest 安装脚本校验失败, 已中止 / speedtest script verification failed, aborted"
+                    rm -f "$st_install"
+                else
+                    bash "$st_install"
+                    rm -f "$st_install"
+                fi
                 $pkg_manager install -y speedtest
             fi
         fi

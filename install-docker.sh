@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_NAME="X-MILI"
-REPO="https://github.com/Aimilibot/X-MILI"
-RAW_BASE="https://raw.githubusercontent.com/Aimilibot/X-MILI/main"
+APP_NAME="CatVPN"
+REPO="https://github.com/qzyfl/CatVPN"
+RAW_BASE="https://raw.githubusercontent.com/qzyfl/CatVPN/main"
 INSTALL_ROOT="${X_MILI_DOCKER_ROOT:-/opt/x-mili-docker}"
 SRC_DIR="${X_MILI_DOCKER_SOURCE_DIR:-${INSTALL_ROOT}/src}"
 DATA_DIR="${X_MILI_DOCKER_DATA_DIR:-/etc/x-ui}"
@@ -19,10 +19,10 @@ green='\033[0;32m'
 yellow='\033[0;33m'
 plain='\033[0m'
 
-log() { echo -e "${green}[X-MILI Docker]${plain} $*"; }
-warn() { echo -e "${yellow}[X-MILI Docker]${plain} $*"; }
-fail() { echo -e "${red}[X-MILI Docker]${plain} $*" >&2; exit 1; }
-step() { echo -e "${green}[X-MILI Docker]${plain} ${yellow}[$1/$2]${plain} $3"; }
+log() { echo -e "${green}[CatVPN Docker]${plain} $*"; }
+warn() { echo -e "${yellow}[CatVPN Docker]${plain} $*"; }
+fail() { echo -e "${red}[CatVPN Docker]${plain} $*" >&2; exit 1; }
+step() { echo -e "${green}[CatVPN Docker]${plain} ${yellow}[$1/$2]${plain} $3"; }
 
 [[ ${EUID} -ne 0 ]] && fail "请使用 root 运行 / Please run as root"
 
@@ -243,7 +243,7 @@ set -euo pipefail
 ROOT="/opt/x-mili-docker"
 COMPOSE_FILE="${ROOT}/docker-compose.yml"
 CONTAINER="ml_app"
-RAW_INSTALL="https://raw.githubusercontent.com/Aimilibot/X-MILI/main/install-docker.sh"
+RAW_INSTALL="https://raw.githubusercontent.com/qzyfl/CatVPN/main/install-docker.sh"
 
 green='\033[0;32m'
 yellow='\033[0;33m'
@@ -261,14 +261,14 @@ exec_container() {
 }
 
 need_compose() {
-    [[ -f "${COMPOSE_FILE}" ]] || { echo -e "${red}Docker 版 X-MILI 未安装。${plain}"; exit 1; }
+    [[ -f "${COMPOSE_FILE}" ]] || { echo -e "${red}Docker 版 CatVPN 未安装。${plain}"; exit 1; }
 }
 
 show_menu() {
     while true; do
         echo -e "
 ╔──────────────────────────────────────────────╗
-│   ${green}X-MILI Docker 管理菜单${plain}                    │
+│   ${green}CatVPN Docker 管理菜单${plain}                    │
 │   ${green}1.${plain} 启动容器                               │
 │   ${green}2.${plain} 停止容器                               │
 │   ${green}3.${plain} 重启面板                               │
@@ -339,16 +339,30 @@ case "${1:-menu}" in
         exec_container "$@"
         ;;
     update)
-        curl -fsSL "${RAW_INSTALL}" | bash
+        # 供应链防护 (M3): 下载到临时文件, 校验来源(qzyfl/CatVPN)与语法后再执行, 失败中止
+        _ml_update_tmp="$(mktemp -t catvpn-docker-update.XXXXXX.sh)"
+        if ! curl -fsSL "${RAW_INSTALL}" -o "$_ml_update_tmp"; then
+            echo -e "${red}下载 Docker 安装脚本失败 / Failed to download installer${plain}"
+            rm -f "$_ml_update_tmp"
+        elif [[ ! -s "$_ml_update_tmp" ]]; then
+            echo -e "${red}下载的脚本为空 / Downloaded script is empty${plain}"
+            rm -f "$_ml_update_tmp"
+        elif ! grep -q 'qzyfl/CatVPN' "$_ml_update_tmp"; then
+            echo -e "${red}安装脚本来源异常 (非 qzyfl/CatVPN), 已中止以防供应链攻击${plain}"
+            rm -f "$_ml_update_tmp"
+        else
+            bash "$_ml_update_tmp"
+            rm -f "$_ml_update_tmp"
+        fi
         ;;
     uninstall)
         need_compose
-        read -rp "确定卸载 Docker 版 X-MILI？数据目录 /etc/x-ui 会保留 [y/N]: " yn
+        read -rp "确定卸载 Docker 版 CatVPN？数据目录 /etc/x-ui 会保留 [y/N]: " yn
         [[ "${yn}" == "y" || "${yn}" == "Y" ]] || exit 0
         compose down
         rm -rf "${ROOT}"
         rm -f /usr/bin/ml
-        echo "已卸载 Docker 版 X-MILI，数据目录 /etc/x-ui 已保留。"
+        echo "已卸载 Docker 版 CatVPN，数据目录 /etc/x-ui 已保留。"
         ;;
     *)
         exec_container /app/x-ui "$@"
@@ -383,7 +397,7 @@ print_guide() {
     server_ip=$(get_server_ip)
 
     echo ""
-    echo -e "${green}================ X-MILI Docker 安装完成 ================${plain}"
+    echo -e "${green}================ CatVPN Docker 安装完成 ================${plain}"
     echo -e "管理命令: ${green}ml${plain}"
     echo -e "面板地址: ${green}http://${server_ip}:${port}${web_path}${plain}"
     if [[ "${panel_credentials_initialized:-0}" == "1" ]]; then
